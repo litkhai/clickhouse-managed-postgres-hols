@@ -11,7 +11,11 @@ SELECT trim(clickhouse_raw_query(
 \echo ''
 \echo '========== 2. DDL via raw query (CREATE TABLE in CH) =========='
 
--- Create a CH-native table that PostgreSQL has no direct knowledge of yet
+-- Idempotency: drop dictionary first (it depends on country_lookup), then table.
+SELECT clickhouse_raw_query($$
+    DROP DICTIONARY IF EXISTS lab.country_dict
+$$, 'host=clickhouse port=8123');
+
 SELECT clickhouse_raw_query($$
     DROP TABLE IF EXISTS lab.country_lookup
 $$, 'host=clickhouse port=8123');
@@ -95,25 +99,32 @@ SELECT trim(clickhouse_raw_query(
 \echo ''
 \echo '========== 6. Use dictGet() from PostgreSQL via pushdown =========='
 
--- dictGet is in the pushdown allowlist — PG will translate this and CH executes it
+-- dictGet is in the pushdown allowlist when used in a WHERE filter
+-- (the function does not exist locally in PG, so it must be wholly pushed down).
 EXPLAIN (VERBOSE)
-SELECT u.user_id,
-       u.country,
-       dictGet('lab.country_dict', 'country_name', u.country) AS country_name,
-       dictGet('lab.country_dict', 'continent',    u.country) AS continent
-FROM   imported_lab.users u
-WHERE  u.tier = 'enterprise'
-ORDER  BY u.user_id
+SELECT user_id, country
+FROM   imported_lab.users
+WHERE  dictGet('lab.country_dict', 'continent', country) = 'Asia'
+ORDER  BY user_id
 LIMIT  5;
 
-SELECT u.user_id,
-       u.country,
-       dictGet('lab.country_dict', 'country_name', u.country) AS country_name,
-       dictGet('lab.country_dict', 'continent',    u.country) AS continent
-FROM   imported_lab.users u
-WHERE  u.tier = 'enterprise'
-ORDER  BY u.user_id
+SELECT user_id, country
+FROM   imported_lab.users
+WHERE  dictGet('lab.country_dict', 'continent', country) = 'Asia'
+ORDER  BY user_id
 LIMIT  5;
+
+-- To project dictionary attributes in the SELECT list, wrap the entire query
+-- in a clickhouse_raw_query call so PG never tries to evaluate dictGet locally.
+SELECT trim(clickhouse_raw_query($$
+    SELECT toString(user_id) || ' -> ' || dictGet('lab.country_dict', 'country_name', country) || ' (' ||
+           dictGet('lab.country_dict', 'continent', country) || ')'
+    FROM   lab.users
+    WHERE  tier = 'enterprise'
+    ORDER  BY user_id
+    LIMIT  5
+    FORMAT TSV
+$$, 'host=clickhouse port=8123')) AS dict_projected;
 
 \echo ''
 \echo '========== 7. Pushdown of CH-specific aggregates: uniq / quantile =========='
