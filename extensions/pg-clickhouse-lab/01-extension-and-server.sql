@@ -44,10 +44,9 @@ CREATE USER MAPPING FOR CURRENT_USER
     SERVER ch_srv
     OPTIONS (user 'default', password '');
 
-SELECT u.usename, srvname, umoptions
+SELECT u.usename, u.srvname, u.umoptions
 FROM   pg_user_mappings u
-JOIN   pg_foreign_server s ON s.srvname = u.srvname
-WHERE  srvname = 'ch_srv';
+WHERE  u.srvname = 'ch_srv';
 
 \echo ''
 \echo '========== 5. Sanity check via clickhouse_raw_query =========='
@@ -58,9 +57,9 @@ SELECT trim(clickhouse_raw_query(
     'host=clickhouse port=8123'
 )) AS clickhouse_version;
 
--- And a tiny aggregate against system.numbers
+-- And a tiny aggregate against the bounded numbers() table function
 SELECT trim(clickhouse_raw_query(
-    'SELECT count() FROM system.numbers LIMIT 1000',
+    'SELECT count() FROM numbers(1000)',
     'host=clickhouse port=8123'
 )) AS numbers_count;
 

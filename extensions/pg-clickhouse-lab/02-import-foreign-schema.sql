@@ -32,10 +32,10 @@ ORDER  BY ordinal_position;
 \echo ''
 \echo '========== 4. Row counts (executed remotely on ClickHouse) =========='
 
-SELECT 'events' AS table, count(*) AS rows FROM imported_lab.events
+SELECT 'events' AS table_name, count(*) AS rows FROM imported_lab.events
 UNION ALL
-SELECT 'users'  AS table, count(*) AS rows FROM imported_lab.users
-ORDER BY table;
+SELECT 'users'  AS table_name, count(*) AS rows FROM imported_lab.users
+ORDER BY table_name;
 
 \echo ''
 \echo '========== 5. Browse a few rows =========='
