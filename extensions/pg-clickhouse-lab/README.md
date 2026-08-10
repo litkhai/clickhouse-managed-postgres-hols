@@ -463,3 +463,11 @@ pg-clickhouse-lab/
 **Happy Learning! 🚀**
 
 질문이나 이슈는 메인 [clickhouse-hols README](../../README.md)를 참조하세요.
+
+## License
+
+[MIT](../../LICENSE) — same as the rest of the repository.
+
+## 라이선스
+
+[MIT](../../LICENSE) — 저장소 전체와 동일합니다.
