@@ -36,11 +36,15 @@ CREATE TABLE bike.trips (
     -- gives the ClickHouse side a sensible key to order and deduplicate on.
     trip_id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     bike_id            text,                  -- 자전거번호
-    started_at         timestamp,             -- 대여일시
+    -- UTC. The source publishes Korean local time and this column carries no
+    -- zone, so the distinction lives here and nowhere else: ClickHouse attaches
+    -- a timezone to DateTime, and KST wall-clock arriving there would silently
+    -- mean nine hours earlier. load-trips.sh converts on the way in.
+    started_at         timestamp,             -- 대여일시 (UTC)
     start_station_id   integer,               -- 대여 대여소번호
     start_station_name text,                  -- 대여 대여소명
     start_rack         integer,               -- 대여거치대
-    ended_at           timestamp,             -- 반납일시
+    ended_at           timestamp,             -- 반납일시 (UTC)
     end_station_id     integer,               -- 반납대여소번호
     end_station_name   text,                  -- 반납대여소명
     end_rack           integer,               -- 반납거치대

@@ -22,6 +22,9 @@ hour-of-day tied to origin, destination, duration and rider. Only the volume
 per day and the timestamps are synthetic; durations get a little noise so
 repeated draws are not byte-identical.
 
+Timestamps are UTC, matching bike.trips. The source publishes Korean local
+time; shift-to-utc.sh converted the table once and everything here follows it.
+
 What is measured and what is assumed
 ------------------------------------
 Measured from the loaded month: the hourly shape (weekday and weekend
@@ -144,7 +147,8 @@ def emit(writer, template, started, rng):
     ])
 
 
-def generate_day(writer, day, pool, weights, base_weekday, base_weekend, scale, rng):
+def generate_day(writer, day, pool, weights, base_weekday, base_weekend, scale, rng,
+                 since=None, until=None):
     weekend = day.weekday() >= 5
     base = base_weekend if weekend else base_weekday
     # Day-to-day variation on top of the seasonal factor: weather, mostly.
@@ -158,6 +162,12 @@ def generate_day(writer, day, pool, weights, base_weekday, base_weekend, scale, 
         for _ in range(count):
             started = dt.datetime.combine(day, dt.time(hour)) + dt.timedelta(
                 seconds=rng.randrange(3600))
+            # A day-shaped generator cannot fill a partial day on its own: the
+            # bounds clip the head and tail so catching up from "the last row"
+            # to "now" does not invent trips that already exist or have not
+            # happened yet.
+            if (since and started <= since) or (until and started > until):
+                continue
             emit(writer, rng.choice(bucket), started, rng)
             written += 1
     return written
@@ -169,6 +179,8 @@ def main():
     ap.add_argument("--to", dest="end", help="last day, YYYY-MM-DD (inclusive)")
     ap.add_argument("--minutes", type=int, help="instead: a window of N minutes ending now")
     ap.add_argument("--days-file", help="instead: one YYYY-MM-DD per line, only those days")
+    ap.add_argument("--since", help="drop trips starting at or before this timestamp")
+    ap.add_argument("--until", help="drop trips starting after this timestamp")
     ap.add_argument("--weekday-base", type=float, help="real trips on an average weekday")
     ap.add_argument("--weekend-base", type=float, help="real trips on an average weekend day")
     ap.add_argument("--scale", type=float, default=1.0, help="multiply every day's volume")
@@ -192,7 +204,9 @@ def main():
     writer = csv.writer(sys.stdout)
 
     if args.minutes:
-        now = dt.datetime.now().replace(microsecond=0)
+        # UTC, matching what is stored. datetime.now() gives the caller's
+        # local time, which on a laptop in Seoul is nine hours out.
+        now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, microsecond=0)
         window_start = now - dt.timedelta(minutes=args.minutes)
         weekend = now.weekday() >= 5
         base = base_weekend if weekend else base_weekday
@@ -246,10 +260,13 @@ def main():
             print(f"  extrapolated months (no published data): {guessed}", file=sys.stderr)
         return 0
 
+    since = dt.datetime.fromisoformat(args.since) if args.since else None
+    until = dt.datetime.fromisoformat(args.until) if args.until else None
     written = 0
     for day in days:
         written += generate_day(writer, day, pool, weights,
-                                base_weekday, base_weekend, args.scale, rng)
+                                base_weekday, base_weekend, args.scale, rng,
+                                since=since, until=until)
     print(f"  {written:,} trips across {len(days)} days ({first} .. {last})", file=sys.stderr)
     return 0
 

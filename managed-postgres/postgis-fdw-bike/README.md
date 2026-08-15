@@ -53,6 +53,8 @@ hostname, which carries the service name and id.
 | `load-stations.sh` | Applies `sql/01-schema.sql`, loads stations, builds `geom` and a GiST index |
 | `load-trips.sh [month …]` | Stages the CP949 CSV, casts it, indexes it |
 | `backfill-trips.sh` | Fills every missing day between the loaded history and yesterday |
+| `catch-up.sh` | Closes the hours between the newest trip and now |
+| `shift-to-utc.sh` | One-off KST→UTC conversion, in primary-key batches |
 | `generate-trips.sh` | Live feed at the rate this hour of this weekday calls for |
 | `explain-pushdown.sh` | Says whether a query ran remotely or was dragged back |
 | `psql.sh` | psql against the service; `-f /sql/02-verify.sql` for the checks |
@@ -61,6 +63,7 @@ hostname, which carries the service name and id.
 |---|---|
 | `sql/10-spatial-postgres.sql` | Five spatial queries that cannot leave Postgres |
 | `sql/20-aggregate-pushdown.sql` | Five aggregates meant to run on ClickHouse |
+| `sql/30-generator-in-db.sql` | pg_cron + a procedure, so the feed runs server-side |
 
 ### The tables
 
@@ -162,6 +165,22 @@ GROUP BY s.district ORDER BY departures DESC LIMIT 5;
  양천구   |     108882 |    15.6 |       1120
  노원구   |      95279 |    17.4 |       1207
 ```
+
+### Time zones
+
+`started_at` and `ended_at` are **UTC**. The source publishes Korean local time
+and the column carries no zone, so the distinction had to be decided rather
+than inherited: ClickHouse attaches a timezone to `DateTime`, and KST
+wall-clock arriving there would quietly mean nine hours earlier.
+`shift-to-utc.sh` converted the table once, `load-trips.sh` converts on the way
+in, and both generators stamp UTC.
+
+Seoul is UTC+9 with no daylight saving, so the weekday peaks sit at 23:00 and
+09:00 UTC. Queries convert where a reader would otherwise misread the number.
+
+Getting this wrong is silent. The in-database generator first read
+`AT TIME ZONE 'Asia/Seoul'` while the table was still KST, and generated the
+07:00 shape at 16:45 — the rows looked entirely plausible.
 
 ### Replicating out
 
@@ -266,6 +285,8 @@ id가 들어 있어 출력은 마스킹됩니다.
 | `load-stations.sh` | `sql/01-schema.sql` 적용, 대여소 적재, `geom` 생성 + GiST 인덱스 |
 | `load-trips.sh [월 …]` | CP949 CSV를 스테이징 후 타입 변환·인덱스 |
 | `backfill-trips.sh` | 적재된 이력과 어제 사이의 **빠진 날짜를 모두** 채움 |
+| `catch-up.sh` | 최신 대여부터 지금까지의 시각 단위 공백을 메움 |
+| `shift-to-utc.sh` | KST→UTC 1회 변환, PK 구간 단위 |
 | `generate-trips.sh` | 지금 이 요일·이 시각에 맞는 속도로 계속 생성 |
 | `explain-pushdown.sh` | 쿼리가 원격에서 돌았는지 끌려왔는지 판정 |
 | `psql.sh` | 서비스에 psql 접속; 점검은 `-f /sql/02-verify.sql` |
@@ -274,6 +295,7 @@ id가 들어 있어 출력은 마스킹됩니다.
 |---|---|
 | `sql/10-spatial-postgres.sql` | Postgres를 떠날 수 없는 공간 쿼리 5개 |
 | `sql/20-aggregate-pushdown.sql` | ClickHouse에서 돌아야 할 집계 5개 |
+| `sql/30-generator-in-db.sql` | pg_cron + 프로시저 — 서버에서 자동 생성 |
 
 ### 테이블
 
@@ -353,6 +375,21 @@ $ ./scripts/backfill-trips.sh --explain
  영등포구 |     150935 |    16.7 |       1128
  송파구   |     144225 |    17.4 |       1224
 ```
+
+### 시간대
+
+`started_at`·`ended_at`은 **UTC**입니다. 원본은 한국 현지 시각으로 발행되고
+컬럼에는 시간대 정보가 없어서, 물려받는 게 아니라 정해야 하는 문제였습니다 —
+ClickHouse는 `DateTime`에 시간대를 붙이므로 KST 벽시계 값이 그대로 넘어가면
+9시간 이른 시각을 뜻하게 됩니다. `shift-to-utc.sh`가 한 번 변환했고,
+`load-trips.sh`는 적재 시 변환하며, 두 생성기 모두 UTC로 찍습니다.
+
+서울은 UTC+9이고 서머타임이 없어 평일 피크는 23:00·09:00 UTC에 있습니다. 쿼리는
+읽는 사람이 오해할 지점에서 변환해 보여줍니다.
+
+**틀려도 조용합니다.** DB 내 생성기가 테이블이 아직 KST일 때
+`AT TIME ZONE 'Asia/Seoul'`로 읽어서 16:45에 07:00 패턴을 생성했는데, 나온 행은
+전혀 이상해 보이지 않았습니다.
 
 ### 복제 내보내기
 

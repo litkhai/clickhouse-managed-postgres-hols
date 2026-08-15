@@ -55,11 +55,13 @@ INSERT INTO bike.trips (
     ended_at, end_station_id, end_station_name, end_rack, duration_min,
     distance_m, birth_year, gender, user_type, start_station_code, end_station_code)
 SELECT bike_id,
-       started_at::timestamp,
+       -- The portal publishes Korean local time. Store UTC: the column has no
+       -- zone, and ClickHouse would attach its own to whatever arrives.
+       started_at::timestamp - interval '9 hours',
        nullif(start_station_id, '')::integer,
        start_station_name,
        nullif(start_rack, '')::integer,
-       nullif(ended_at, '')::timestamp,
+       nullif(ended_at, '')::timestamp - interval '9 hours',
        nullif(end_station_id, '')::integer,
        end_station_name,
        nullif(end_rack, '')::integer,
