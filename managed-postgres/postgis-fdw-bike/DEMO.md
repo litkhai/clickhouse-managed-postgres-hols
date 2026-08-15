@@ -66,7 +66,29 @@ ln -s ../provisioning/config.env config.env
 ./scripts/generate-trips.sh    # keep it live
 ```
 
-Full detail in [README.md](README.md); how it was built in [WRITEUP.md](WRITEUP.md).
+**Or watch it happen:**
+
+```bash
+./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
+cd ui && docker compose --env-file ../config.env up --build   # localhost:8080
+```
+
+The Pushdown tab runs the same query on both sides at once. Measured against a
+28-day window of 24M rows:
+
+| | plan | rows it moved | time |
+|---|---|---|---|
+| Postgres, local tables | 10 nodes — hash join, sort, aggregate | 3,459,577 through the sort | 9.6 s |
+| ClickHouse, foreign tables | **one Foreign Scan** | 15 rows back | 1.3 s |
+
+ClickHouse's own `system.query_log` agrees, which is the part that settles it:
+24.11M rows read *there*, 15 rows returned. The join went with the aggregate —
+both tables are remote, which is the whole reason `bike.stations` is replicated
+too.
+
+Full detail in [README.md](README.md); how the Postgres half was built in
+[WRITEUP.md](WRITEUP.md), and the ClickHouse half and the dashboard in
+[WRITEUP-UI.md](WRITEUP-UI.md).
 
 ---
 
@@ -130,4 +152,26 @@ ln -s ../provisioning/config.env config.env
 ./scripts/generate-trips.sh    # 계속 흘려보냄
 ```
 
-자세한 내용은 [README.md](README.md), 만든 과정은 [WRITEUP.md](WRITEUP.md).
+**직접 보려면:**
+
+```bash
+./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
+cd ui && docker compose --env-file ../config.env up --build   # localhost:8080
+```
+
+Pushdown 탭이 같은 쿼리를 양쪽에서 동시에 돌립니다. 2,400만 행 중 28일 구간
+측정값:
+
+| | 플랜 | 옮긴 행 | 시간 |
+|---|---|---|---|
+| Postgres, 로컬 테이블 | 노드 10개 — 해시 조인·정렬·집계 | 정렬을 통과한 3,459,577행 | 9.6초 |
+| ClickHouse, foreign table | **Foreign Scan 하나** | 회수 15행 | 1.3초 |
+
+결정적인 건 ClickHouse 자신의 `system.query_log`도 같은 말을 한다는 것입니다:
+*저쪽에서* 24.11M 행을 읽고 15행을 돌려줬습니다. 조인도 집계와 함께 갔습니다 —
+두 테이블이 모두 원격이기 때문이고, `bike.stations`까지 복제하는 이유가 바로
+이것입니다.
+
+자세한 내용은 [README.md](README.md), Postgres 절반을 만든 과정은
+[WRITEUP.md](WRITEUP.md), ClickHouse 쪽과 대시보드는
+[WRITEUP-UI.md](WRITEUP-UI.md).

@@ -1,0 +1,33 @@
+# The UI reads the same config.env as the rest of the lab.
+#
+#   cd ui && docker compose --env-file ../config.env up --build
+#   open http://localhost:8080
+services:
+  ui:
+    build: .
+    container_name: bike-ui
+    ports: ["8080:8080"]
+    environment:
+      PGHOST:     ${PGHOST:?set PGHOST in config.env}
+      PGPORT:     ${PGPORT:-5432}
+      PGUSER:     ${PGUSER:-postgres}
+      PGPASSWORD: ${PGPASSWORD:?set PGPASSWORD in config.env}
+      PGDATABASE: ${PGDATABASE:-postgres}
+      PGSSLMODE:  ${PGSSLMODE:-require}
+
+      # The local schema — geometry lives here and never moves.
+      LOCAL_SCHEMA: ${LOCAL_SCHEMA:-bike}
+
+      # Where sql/40-fdw-clickhouse.sql put the foreign tables. Set it and the
+      # Statistics tab gains a Postgres/ClickHouse switch and the Pushdown tab
+      # can run both sides at once. Left empty, the page says so plainly rather
+      # than reporting "ran on Postgres" as though a pushdown had failed.
+      FOREIGN_SCHEMA: ${FOREIGN_SCHEMA:-}
+
+      # Fallback for the Statistics tab when there are no foreign tables.
+      AGG_SCHEMA: ${AGG_SCHEMA:-bike}
+
+      # A scan of 24M rows is tens of seconds; past this the server gives up
+      # rather than letting clicks pile into each other.
+      STATEMENT_TIMEOUT_MS: ${STATEMENT_TIMEOUT_MS:-120000}
+    restart: unless-stopped

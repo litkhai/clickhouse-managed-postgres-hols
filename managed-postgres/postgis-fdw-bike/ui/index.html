@@ -1,0 +1,1777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seoul bike — PostGIS + ClickHouse</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+:root {
+  --bg: #16161a; --panel: #1f1f24; --line: #2e2e35; --fg: #ececf0;
+  --muted: #9a9ca6; --yellow: #faff69;
+
+  /* Identity, not decoration: blue is Postgres and yellow is ClickHouse
+     everywhere on this page. The pair is this app's status palette — validated
+     for separation against the panel surface (CVD ΔE 35.1, normal 38.2), and
+     exempt from the categorical lightness band the way any status color is.
+     Large filled marks use a toned yellow so the two bars in a comparison read
+     at the same weight instead of one glaring. */
+  --pg: #6ea8fe; --ch: #faff69;
+  --pg-mark: #6ea8fe; --ch-mark: #cdd43b;
+
+  /* Data series, in fixed order. Never cycled, never reassigned by rank.
+     Validated all-pairs on the panel surface: worst CVD ΔE 9.4, normal 24.6. */
+  --s1: #d95926; --s2: #199e70; --s3: #9085e9;
+
+  /* Chart chrome. One step off the surface, recessive. */
+  --grid: #2c2c2a; --axis: #383835; --tick: #898781;
+
+  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+       background: var(--bg); color: var(--fg);
+       font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.spacer { flex: 1; }
+
+header { display: flex; align-items: center; gap: 8px; padding: 0 16px;
+         border-bottom: 1px solid var(--line); background: var(--panel); }
+header .title { font-weight: 700; margin-right: 14px; padding: 12px 0; white-space: nowrap; }
+header .title span { color: var(--yellow); }
+#tabs { display: flex; gap: 2px; }
+#tabs button { font: inherit; font-size: 13.5px; padding: 13px 16px 11px; border: 0;
+               border-bottom: 2px solid transparent; background: transparent;
+               color: var(--muted); cursor: pointer; }
+#tabs button:hover { color: var(--fg); }
+#tabs button.on { color: var(--fg); border-bottom-color: var(--yellow); font-weight: 600; }
+
+.badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+         display: inline-flex; align-items: center; gap: 6px; }
+.badge.pg { background: rgba(110,168,254,.16); color: var(--pg); }
+.badge.ch { background: rgba(250,255,105,.16); color: var(--ch); }
+.badge.mix { background: rgba(144,133,233,.18); color: #b3a9f2; }
+.badge.off { background: #26262c; color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* ── Filter bar ─────────────────────────────────────────────────────────── */
+#filters { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+           padding: 10px 16px; border-bottom: 1px solid var(--line);
+           background: var(--panel); }
+#filters.hide { display: none; }
+.f { display: flex; flex-direction: column; gap: 4px; }
+.f > label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+             letter-spacing: .04em; }
+.f input, .f select, .f button.combo {
+  font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 7px;
+  border: 1px solid var(--line); background: #17171c; color: var(--fg); }
+.f input[type=date] { min-width: 138px; }
+.f input[type=number] { width: 96px; }
+.f .pair { display: flex; align-items: center; gap: 6px; }
+.f .pair span { color: var(--muted); font-size: 12px; }
+
+.combowrap { position: relative; }
+button.combo { cursor: pointer; min-width: 168px; text-align: left; }
+.combolist { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0;
+             width: 250px; max-height: 300px; overflow: auto; padding: 6px;
+             background: var(--panel); border: 1px solid var(--line);
+             border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.5); display: none; }
+.combolist.open { display: block; }
+.combolist label { display: flex; gap: 8px; align-items: center; padding: 5px 7px;
+                   border-radius: 6px; font-size: 13px; cursor: pointer; }
+.combolist label:hover { background: #26262c; }
+.combolist .head { display: flex; gap: 6px; padding: 2px 4px 7px; }
+.combolist .head button { flex: 1; font: inherit; font-size: 12px; padding: 4px;
+                          border-radius: 6px; border: 1px solid var(--line);
+                          background: transparent; color: var(--muted); cursor: pointer; }
+
+#runBtn { font: inherit; font-size: 13.5px; font-weight: 650; padding: 8px 20px;
+          border-radius: 8px; border: 1px solid var(--yellow); background: var(--yellow);
+          color: #16161a; cursor: pointer; white-space: nowrap; }
+#runBtn:disabled { opacity: .55; cursor: default; }
+#runBtn.clean { background: transparent; color: var(--muted); border-color: var(--line); }
+#runState { font-size: 12.5px; color: var(--muted); min-width: 230px; }
+#runState.dirty { color: var(--yellow); }
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+.tab { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.tab.on { display: flex; }
+.pad { padding: 18px 20px 26px; overflow: auto; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+         gap: 12px; margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px 16px; min-width: 0; }
+.card h3 { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.tile small { color: var(--muted); font-size: 12.5px; display: block; }
+.tile b { display: block; font-size: 26px; letter-spacing: -.02em; line-height: 1.15;
+          margin: 2px 0; }
+.tile .spark { margin-top: 6px; height: 30px; }
+
+/* The mixed dashboard: a map and the charts on one grid, three columns wide. */
+.dashgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.dashgrid .span2 { grid-column: span 2; }
+@media (max-width: 1100px) {
+  .dashgrid { grid-template-columns: minmax(0, 1fr); }
+  .dashgrid .span2 { grid-column: span 1; }
+}
+.dashmap { height: 320px; border-radius: 9px; overflow: hidden; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 12px; }
+/* Exactly two, because there are exactly two sides. auto-fit would make four
+   400px columns on a wide screen and leave the comparison huddled on the left. */
+.sidebyside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .sidebyside { grid-template-columns: minmax(0, 1fr); } }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; }
+.kv span:nth-child(odd) { color: var(--muted); }
+.kv span:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums;
+                           overflow: hidden; text-overflow: ellipsis; }
+.ok { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--crit); }
+
+.charthead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.charthead h3 { margin: 0; flex: none; }
+.charthead .cost { font-size: 11.5px; color: var(--tick);
+                   font-variant-numeric: tabular-nums; }
+.charthead .tbtn { font: inherit; font-size: 11.5px; padding: 2px 8px; border-radius: 6px;
+                   border: 1px solid var(--line); background: transparent;
+                   color: var(--muted); cursor: pointer; }
+.legend { display: flex; gap: 14px; margin: 2px 0 6px; font-size: 12px; color: var(--muted); }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block;
+            margin-right: 5px; vertical-align: -1px; }
+.plot { width: 100%; }
+.plot text { font-size: 11px; fill: var(--tick); font-variant-numeric: tabular-nums; }
+.plot .vlabel { fill: var(--fg); font-size: 11.5px; font-weight: 600; }
+.plot .gridline { stroke: var(--grid); stroke-width: 1; }
+.plot .baseline { stroke: var(--axis); stroke-width: 1; }
+.chartTable { max-height: 230px; overflow: auto; margin-top: 6px; }
+
+#tip { position: fixed; z-index: 90; pointer-events: none; display: none;
+       background: #101014; border: 1px solid var(--line); border-radius: 8px;
+       padding: 7px 10px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.55);
+       max-width: 260px; }
+#tip b { display: block; margin-bottom: 3px; }
+#tip .row { display: flex; gap: 10px; justify-content: space-between; }
+#tip .row span:last-child { font-variant-numeric: tabular-nums; }
+
+/* ── Maps / tables ──────────────────────────────────────────────────────── */
+.subnav { display: flex; align-items: center; gap: 6px; padding: 9px 16px;
+          border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+.subnav button { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 7px;
+                 border: 1px solid var(--line); background: transparent; color: var(--fg);
+                 cursor: pointer; }
+.subnav button:hover { border-color: #4a4a55; }
+.subnav button.on { background: var(--yellow); color: #16161a; border-color: var(--yellow);
+                    font-weight: 600; }
+.subnav label { font-size: 12.5px; color: var(--muted); display: flex; align-items: center;
+                gap: 6px; }
+
+.splitwrap { flex: 1; display: flex; min-height: 0; }
+#map { flex: 1; min-width: 0; }
+aside { width: 380px; flex: none; border-left: 1px solid var(--line);
+        background: var(--panel); padding: 16px; overflow: auto; font-size: 13px; }
+aside h3 { margin: 0 0 6px; font-size: 14px; }
+.note { color: var(--muted); margin: 0 0 10px; }
+.meta { color: var(--muted); font-size: 12.5px; }
+pre { background: #14141a; border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px; overflow: auto; font-size: 11.5px; line-height: 1.45;
+      color: #cfd2dc; margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; }
+details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+
+.result { flex: 1; overflow: auto; padding: 10px 20px 20px; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line);
+         white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--bg); color: var(--muted); font-weight: 600;
+     z-index: 2; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.err { color: #ff8f8f; }
+.empty { color: var(--muted); padding: 20px 0; }
+
+/* ── Pushdown ───────────────────────────────────────────────────────────── */
+.wire { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.step { display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 9px;
+        border: 1px solid var(--line); background: var(--panel); font-size: 12.5px; }
+.step .mark { font-weight: 700; }
+.step.yes .mark { color: var(--good); } .step.no .mark { color: var(--crit); }
+.arrow { color: var(--tick); }
+.banner { border: 1px solid var(--line); border-left: 3px solid var(--warn);
+          background: rgba(250,178,25,.07); border-radius: 10px; padding: 12px 14px;
+          margin-bottom: 14px; font-size: 13px; }
+.banner.good { border-left-color: var(--good); background: rgba(12,163,12,.07); }
+.banner b { display: block; margin-bottom: 4px; }
+
+.side { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px 16px; min-width: 0; }
+.side.pgside { border-top: 2px solid var(--pg-mark); }
+.side.chside { border-top: 2px solid var(--ch-mark); }
+.bignum { font-size: 30px; letter-spacing: -.02em; line-height: 1.1; }
+.bignum small { font-size: 13px; color: var(--muted); margin-left: 4px; }
+
+.plantree { font-size: 11.5px; line-height: 1.7; margin-top: 8px; }
+.pnode { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px;
+         border-radius: 5px; }
+.pnode.remote { background: rgba(205,212,59,.12); }
+.pnode .ptype { font-weight: 600; }
+.pnode.remote .ptype { color: var(--ch); }
+.pnode .prows { margin-left: auto; color: var(--tick); font-variant-numeric: tabular-nums;
+                white-space: nowrap; }
+
+/* ── Log ────────────────────────────────────────────────────────────────── */
+.logrow { cursor: pointer; }
+.logrow:hover td { background: #22222a; }
+.logdetail td { background: #17171c; white-space: normal; padding: 12px 16px; }
+.logdetail .grid2 { gap: 10px; }
+.summarystrip { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.summarystrip .card { padding: 10px 14px; }
+.summarystrip b { font-size: 20px; display: block; }
+
+.prose { max-width: 76ch; }
+.prose h3 { margin: 22px 0 6px; font-size: 14px; }
+.prose h3:first-child { margin-top: 0; }
+.prose p, .prose li { color: #d3d5dd; }
+.prose code { background: #14141a; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.prose a { color: var(--pg); }
+
+.maplibregl-popup-content { background: #1f1f24; color: #ececf0; border-radius: 8px;
+                            font-size: 12.5px; }
+.maplibregl-popup-tip { border-top-color: #1f1f24 !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">Seoul bike · <span>PostGIS</span> + ClickHouse</div>
+  <nav id="tabs">
+    <button data-tab="dash" class="on" data-i18n="tab.dash">Dashboard</button>
+    <button data-tab="maps" data-i18n="tab.maps">Maps</button>
+    <button data-tab="stats" data-i18n="tab.stats">Statistics</button>
+    <button data-tab="push" data-i18n="tab.push">Pushdown</button>
+    <button data-tab="log" data-i18n="tab.log">Log</button>
+    <button data-tab="about" data-i18n="tab.about">About</button>
+  </nav>
+  <div class="spacer"></div>
+  <div id="langSwitch"></div>
+  <span class="badge off" id="topbadge" data-i18n="badge.connecting">connecting…</span>
+</header>
+
+<div id="filters">
+  <div class="f"><label data-i18n="f.from">From (KST)</label><input type="date" id="fFrom"></div>
+  <div class="f"><label data-i18n="f.to">To (KST)</label><input type="date" id="fTo"></div>
+  <div class="f"><label data-i18n="f.district">District</label>
+    <div class="combowrap">
+      <button class="combo" id="fDistBtn" type="button" data-i18n="f.allDistricts">All districts</button>
+      <div class="combolist" id="fDistList"></div>
+    </div>
+  </div>
+  <div class="f"><label data-i18n="f.hour">Hour (KST)</label>
+    <div class="pair"><select id="fHourFrom"></select><span>–</span><select id="fHourTo"></select></div>
+  </div>
+  <div class="f"><label data-i18n="f.days">Days</label>
+    <select id="fDaytype">
+      <option value="all" data-i18n="f.allDays">All days</option>
+      <option value="weekday" data-i18n="f.weekdays">Weekdays</option>
+      <option value="weekend" data-i18n="f.weekends">Weekends</option>
+    </select>
+  </div>
+  <div class="f"><label data-i18n="f.minTrips">Min trips / group</label><input type="number" id="fMin" min="0" step="500" value="0"></div>
+  <div class="spacer"></div>
+  <div class="f"><label>&nbsp;</label><span id="runState">—</span></div>
+  <div class="f"><label>&nbsp;</label><button id="runBtn" data-i18n="btn.run">▶ Run query</button></div>
+</div>
+
+<section class="tab on" id="tab-dash">
+  <div class="pad">
+    <div class="cards" id="ovCards"></div>
+    <div class="dashgrid">
+      <div class="card span2">
+        <div class="charthead"><h3 data-i18n="ch.map">Station demand — PostGIS</h3>
+          <span class="cost" id="cost-map"></span><div class="spacer"></div>
+          <span class="badge pg"><i class="dot"></i><span data-i18n="badge.geomLocal">geometry · always local</span></span></div>
+        <div class="dashmap" id="dashMap"></div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3 data-i18n="ch.districts">Busiest districts</h3>
+          <span class="cost" id="cost-districts"></span><div class="spacer"></div>
+          <button class="tbtn" data-table="districts" data-i18n="btn.table">table</button></div>
+        <div id="ch-districts"></div><div class="chartTable" id="tb-districts" hidden></div>
+      </div>
+      <div class="card span2">
+        <div class="charthead"><h3 data-i18n="ch.daily">Trips per day</h3>
+          <span class="cost" id="cost-daily"></span><div class="spacer"></div>
+          <button class="tbtn" data-table="daily" data-i18n="btn.table">table</button></div>
+        <div id="ch-daily"></div><div class="chartTable" id="tb-daily" hidden></div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3 data-i18n="ch.duration">Trip length (minutes)</h3>
+          <span class="cost" id="cost-duration"></span><div class="spacer"></div>
+          <button class="tbtn" data-table="duration" data-i18n="btn.table">table</button></div>
+        <div id="ch-duration"></div><div class="chartTable" id="tb-duration" hidden></div>
+      </div>
+      <div class="card span2">
+        <div class="charthead"><h3 data-i18n="ch.hourly">Hour of day</h3>
+          <span class="cost" id="cost-hourly"></span><div class="spacer"></div>
+          <button class="tbtn" data-table="hourly" data-i18n="btn.table">table</button></div>
+        <div class="legend">
+          <span><i style="background:var(--s1)"></i><span data-i18n="lg.weekday">Weekday</span></span>
+          <span><i style="background:var(--s2)"></i><span data-i18n="lg.weekend">Weekend</span></span></div>
+        <div id="ch-hourly"></div><div class="chartTable" id="tb-hourly" hidden></div>
+      </div>
+      <div class="card"><h3 data-i18n="card.pg">Postgres — the geometry side</h3><div id="ovPg" class="kv"></div></div>
+      <div class="card"><h3 data-i18n="card.cdc">Replication — ClickPipes / PeerDB</h3><div id="ovCdc" class="kv"></div></div>
+      <div class="card"><h3 data-i18n="card.gen">Generator — pg_cron</h3><div id="ovGen" class="kv"></div></div>
+      <div class="card"><h3 data-i18n="card.fdw">Pushdown — pg_clickhouse</h3><div id="ovFdw" class="kv"></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="tab" id="tab-maps">
+  <div class="subnav"><span id="mapnav"></span><div class="spacer"></div>
+    <span class="badge pg"><i class="dot"></i><span data-i18n="badge.postgisLocal">PostGIS · always local</span></span></div>
+  <div class="splitwrap">
+    <div id="map"></div>
+    <aside>
+      <h3 id="mapTitle">—</h3>
+      <p class="note" id="mapNote"></p>
+      <div id="mapVerdict" style="margin-bottom:8px"></div>
+      <div class="kv" id="mapFacts"></div>
+      <details open><summary data-i18n="sum.sql">SQL that ran</summary><pre id="mapSql"></pre></details>
+      <details><summary data-i18n="sum.plan">Plan tree</summary><div id="mapPlan"></div></details>
+    </aside>
+  </div>
+</section>
+
+<section class="tab" id="tab-stats">
+  <div class="subnav"><span id="aggnav"></span>
+    <span style="width:14px"></span>
+    <label><span data-i18n="lbl.runAgainst">Run against</span> <span id="sideNav" style="display:inline-flex;gap:4px;margin-left:4px"></span></label>
+    <span style="width:14px"></span>
+    <label><span data-i18n="lbl.bucket">Bucket</span>
+      <select id="fBucket" style="font:inherit;font-size:12.5px;padding:4px 8px;border-radius:7px;border:1px solid var(--line);background:#17171c;color:var(--fg)">
+        <option value="hour">1h</option>
+        <option value="day" selected>24h</option>
+        <option value="week">1w</option>
+        <option value="month">1mo</option>
+        <option value="quarter">1q</option>
+      </select></label>
+    <div class="spacer"></div>
+    <span class="badge off" id="aggbadge">—</span></div>
+  <div class="splitwrap">
+    <div class="result" id="aggResult"><p class="empty" data-i18n="empty.run">press Run to load</p></div>
+    <aside>
+      <h3 id="aggTitle">—</h3>
+      <p class="note" id="aggNote"></p>
+      <div id="aggVerdict" style="margin-bottom:8px"></div>
+      <div class="kv" id="aggFacts"></div>
+      <h3 style="margin:16px 0 4px" data-i18n="ledger.title">Bucket vs rows returned</h3>
+      <p class="note" data-i18n="ledger.note">Every bucket you try this session.</p>
+      <div id="aggLedger"></div>
+      <details open><summary data-i18n="sum.sql">SQL that ran</summary><pre id="aggSql"></pre></details>
+      <details id="aggRemoteBox" hidden><summary data-i18n="sum.remote">Remote SQL</summary>
+        <pre id="aggRemote"></pre></details>
+      <details><summary data-i18n="sum.plan">Plan tree</summary><div id="aggPlan"></div></details>
+    </aside>
+  </div>
+</section>
+
+<section class="tab" id="tab-push">
+  <div class="subnav"><span id="pushnav"></span><div class="spacer"></div>
+    <label><input type="checkbox" id="pushAnalyze"> <span data-i18n="lbl.analyze">EXPLAIN ANALYZE</span></label>
+  </div>
+  <div class="pad">
+    <div id="pushWire" class="wire"></div>
+    <div id="pushBanner"></div>
+    <div class="sidebyside" id="pushSides"><p class="empty" data-i18n="empty.compare">press Run to compare the two sides</p></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-log">
+  <div class="subnav">
+    <button id="logRefresh" data-i18n="btn.refresh">Refresh</button>
+    <label><input type="checkbox" id="logAuto" checked> <span data-i18n="lbl.auto">auto every 5s</span></label>
+    <div class="spacer"></div>
+    <span class="meta" data-i18n="log.hint">click a row for its SQL, remote SQL and plan</span>
+  </div>
+  <div class="pad">
+    <div class="summarystrip" id="logSummary"></div>
+    <div id="logResult"></div>
+  </div>
+</section>
+
+<section class="tab" id="tab-about">
+  <div class="pad prose" id="aboutKo"></div>
+  <div class="pad prose" id="aboutEn" hidden></div>
+</section>
+
+<div id="tip"></div>
+
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const SEOUL = { center: [126.986, 37.55], zoom: 10.4 };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = n => Number(n).toLocaleString();
+const compact = n => {
+  n = Number(n);
+  if (!isFinite(n)) return '—';
+  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e4) return (n / 1e3).toFixed(0) + 'K';
+  return n.toLocaleString();
+};
+const ms = v => v == null ? '' : (v >= 1000 ? (v / 1000).toFixed(1) + ' s' : Math.round(v) + ' ms');
+
+// ─────────────────────────────────────────────────────────────────────────
+// Language. Korean by default — this is Seoul's data and the lab is run in
+// Korean; English is the second reading, not the baseline. Switching reloads
+// rather than re-rendering in place: a page with a map, four charts and three
+// tables has too many mounted strings for a partial swap to stay honest.
+// ─────────────────────────────────────────────────────────────────────────
+const LANG = (() => {
+  // ?lang= wins over the stored choice and then becomes the stored choice, so a
+  // link can open the page in a particular language without the reader losing
+  // the setting on the next visit.
+  const q = new URLSearchParams(location.search).get('lang');
+  if (q === 'en' || q === 'ko') { localStorage.setItem('bikeui.lang', q); return q; }
+  return localStorage.getItem('bikeui.lang') === 'en' ? 'en' : 'ko';
+})();
+document.documentElement.lang = LANG;
+
+/** Pick a language out of a {ko, en} pair; pass anything else through. */
+const tv = v => (v && typeof v === 'object' && ('ko' in v || 'en' in v))
+  ? (v[LANG] ?? v.en ?? v.ko) : v;
+const t = k => (S[k] ? tv(S[k]) : k);
+
+const S = {
+  'tab.dash':   { ko: '대시보드',   en: 'Dashboard' },
+  'tab.maps':   { ko: '지도',       en: 'Maps' },
+  'tab.stats':  { ko: '통계',       en: 'Statistics' },
+  'tab.push':   { ko: '푸시다운',   en: 'Pushdown' },
+  'tab.log':    { ko: '로그',       en: 'Log' },
+  'tab.about':  { ko: '설명',       en: 'About' },
+
+  'f.from':          { ko: '시작 (KST)',      en: 'From (KST)' },
+  'f.to':            { ko: '끝 (KST)',        en: 'To (KST)' },
+  'f.district':      { ko: '자치구',          en: 'District' },
+  'f.allDistricts':  { ko: '전체 자치구',      en: 'All districts' },
+  'f.hour':          { ko: '시간대 (KST)',    en: 'Hour (KST)' },
+  'f.days':          { ko: '요일',            en: 'Days' },
+  'f.allDays':       { ko: '전체',            en: 'All days' },
+  'f.weekdays':      { ko: '평일',            en: 'Weekdays' },
+  'f.weekends':      { ko: '주말',            en: 'Weekends' },
+  'f.minTrips':      { ko: '그룹 최소 건수',   en: 'Min trips / group' },
+  'f.clear':         { ko: '해제 — 전체 자치구', en: 'Clear — all districts' },
+
+  'btn.run':     { ko: '▶ 쿼리 실행', en: '▶ Run query' },
+  'btn.table':   { ko: '표',          en: 'table' },
+  'btn.chart':   { ko: '차트만',      en: 'chart only' },
+  'btn.refresh': { ko: '새로고침',    en: 'Refresh' },
+
+  'run.dirty':   { ko: '필터가 바뀌었습니다 — 실행을 누르세요', en: 'filters changed — press Run' },
+  'run.loadTab': { ko: '실행을 눌러 이 탭을 불러오세요',        en: 'press Run to load this tab' },
+  'run.running': { ko: '실행 중…',   en: 'running…' },
+  'run.failed':  { ko: '실패 — ',    en: 'failed — ' },
+  'run.logged':  { ko: '개 쿼리 기록됨', en: ' queries logged' },
+  'run.chartsTotal': { ko: '차트 합계', en: 'charts' },
+  'run.map':     { ko: '지도',        en: 'map' },
+  'run.cached':  { ko: ' (캐시)',     en: ' (cached)' },
+
+  'ch.map':       { ko: '대여소 수요 — PostGIS',  en: 'Station demand — PostGIS' },
+  'ch.districts': { ko: '자치구 순위',            en: 'Busiest districts' },
+  'ch.daily':     { ko: '일별 대여',              en: 'Trips per day' },
+  'ch.duration':  { ko: '이용 시간 (분)',         en: 'Trip length (minutes)' },
+  'ch.hourly':    { ko: '시간대별',               en: 'Hour of day' },
+  'lg.weekday':   { ko: '평일',                   en: 'Weekday' },
+  'lg.weekend':   { ko: '주말',                   en: 'Weekend' },
+
+  'card.pg':  { ko: 'Postgres — 지오메트리 쪽',        en: 'Postgres — the geometry side' },
+  'card.cdc': { ko: '복제 — ClickPipes / PeerDB',      en: 'Replication — ClickPipes / PeerDB' },
+  'card.gen': { ko: '생성기 — pg_cron',                en: 'Generator — pg_cron' },
+  'card.fdw': { ko: '푸시다운 — pg_clickhouse',        en: 'Pushdown — pg_clickhouse' },
+
+  'tile.trips':    { ko: '복제된 대여',      en: 'Trips replicated' },
+  'tile.arriving': { ko: '유입 속도',        en: 'Arriving now' },
+  'tile.lastHour': { ko: '최근 1시간',       en: 'Last hour' },
+  'tile.stations': { ko: '대여소',           en: 'Stations' },
+  'tile.disk':     { ko: 'bike.trips 크기',  en: 'bike.trips on disk' },
+  'tile.perMin':   { ko: ' /분',             en: ' /min' },
+  'tile.stationsSub': { ko: 'PostGIS 포인트, 25개 자치구', en: 'PostGIS points, 25 districts' },
+  'tile.newestAgo':   { ko: '전 최신 기록',  en: 'ago' },
+
+  'kv.version':   { ko: '버전',              en: 'version' },
+  'kv.rowsEst':   { ko: '행 수 (추정)',      en: 'rows (est.)' },
+  'kv.firstTrip': { ko: '최초 대여',         en: 'first trip' },
+  'kv.newestTrip':{ ko: '최신 대여',         en: 'newest trip' },
+  'kv.onDisk':    { ko: '디스크 사용',       en: 'on disk' },
+  'kv.state':     { ko: '상태',              en: 'state' },
+  'kv.slot':      { ko: '슬롯 활성',         en: 'slot active' },
+  'kv.wal':       { ko: '미소비 WAL',        en: 'unconsumed WAL' },
+  'kv.published': { ko: '발행 테이블',       en: 'published' },
+  'kv.scheduled': { ko: '스케줄됨',          en: 'scheduled' },
+  'kv.runs':      { ko: '성공 실행',         en: 'successful runs' },
+  'kv.lastRun':   { ko: '마지막 실행',       en: 'last run' },
+  'kv.extension': { ko: '확장',              en: 'extension' },
+  'kv.server':    { ko: 'foreign server',    en: 'foreign server' },
+  'kv.ftables':   { ko: 'foreign table',     en: 'foreign tables' },
+  'kv.statsReads':{ ko: '통계 탭이 읽는 곳', en: 'Statistics reads' },
+  'kv.comparison':{ ko: '비교',              en: 'comparison' },
+  'kv.schema':    { ko: '스키마',            en: 'schema' },
+  'kv.features':  { ko: '그린 피처',         en: 'features drawn' },
+  'kv.duration':  { ko: '소요 시간',         en: 'duration' },
+  'kv.widest':    { ko: '가장 넓은 플랜 노드', en: 'widest plan node' },
+  'kv.crossed':   { ko: '네트워크를 건넌 행', en: 'across the wire' },
+  'kv.rowsOut':   { ko: '반환 행',           en: 'rows returned' },
+  'kv.filter':    { ko: '필터',              en: 'filter' },
+  'kv.bucket':    { ko: '버킷',              en: 'bucket' },
+  'kv.planNodes': { ko: '플랜 노드 수',      en: 'plan nodes' },
+  'kv.rows':      { ko: '행',                en: 'rows' },
+  'kv.none':      { ko: '없음 — foreign scan 자체가 없음', en: 'none — no foreign scan' },
+  'kv.available': { ko: '가능',              en: 'available' },
+  'kv.unavailable': { ko: '불가',            en: 'unavailable' },
+  'kv.missing':   { ko: '없음',              en: 'missing' },
+  'kv.none2':     { ko: '없음',              en: 'none' },
+
+  'badge.connecting': { ko: '연결 중…',            en: 'connecting…' },
+  'badge.geomLocal':  { ko: '지오메트리 · 항상 로컬', en: 'geometry · always local' },
+  'badge.postgisLocal': { ko: 'PostGIS · 항상 로컬', en: 'PostGIS · always local' },
+  'badge.fdwReady':   { ko: 'FDW 준비됨 · foreign table ', en: 'FDW ready · foreign tables ' },
+  'badge.cdcNoFdw':   { ko: 'CDC 스트리밍 · FDW 없음',    en: 'CDC streaming · no FDW yet' },
+  'badge.ranOn':      { ko: '실행된 곳: ',        en: 'ran on: ' },
+
+  'lbl.runAgainst': { ko: '실행 대상',       en: 'Run against' },
+  'lbl.bucket':     { ko: '집계 단위',       en: 'Bucket' },
+  'lbl.analyze':    { ko: 'EXPLAIN ANALYZE (실제 실행 — 추정치가 아닌 실측 행 수)',
+                      en: 'EXPLAIN ANALYZE (runs it — measured rows, not estimates)' },
+  'lbl.auto':       { ko: '5초마다 자동',    en: 'auto every 5s' },
+
+  'sum.sql':    { ko: '실행된 SQL',                    en: 'SQL that ran' },
+  'sum.remote': { ko: 'Remote SQL — ClickHouse로 실제 전송된 것', en: 'Remote SQL — what was sent to ClickHouse' },
+  'sum.plan':   { ko: '실행 계획',                     en: 'Plan tree' },
+  'sum.planEst':{ ko: '실행 계획 (플래너 추정)',        en: 'Plan tree (planner estimates)' },
+
+  'ledger.title': { ko: '버킷별 반환 행 수', en: 'Bucket vs rows returned' },
+  'ledger.note':  { ko: '이번 세션에서 시도한 버킷들. 읽는 행은 매번 같고, 돌아오는 행 수만 달라집니다.',
+                    en: 'Every bucket you try this session. The same rows are read each time; only how many come back changes.' },
+  'ledger.pick':  { ko: '다른 버킷을 골라 비교해 보세요.', en: 'Pick another bucket to compare.' },
+  'ledger.ranOn': { ko: '실행된 곳', en: 'ran on' },
+
+  'empty.run':     { ko: '실행을 누르세요',            en: 'press Run to load' },
+  'empty.compare': { ko: '실행을 눌러 양쪽을 비교하세요', en: 'press Run to compare the two sides' },
+  'empty.noRows':  { ko: '이 필터에는 해당 행이 없습니다', en: 'no rows for this filter' },
+  'empty.nothing': { ko: '아직 없습니다',              en: 'nothing yet' },
+  'empty.noWindow':{ ko: '이 구간에는 데이터가 없습니다', en: 'no rows in this window' },
+  'empty.webgl':   { ko: 'WebGL을 쓸 수 없어 지도를 그릴 수 없습니다. 나머지 기능은 정상 동작합니다.',
+                     en: 'WebGL is unavailable, so the map cannot draw. Everything else on the page still works.' },
+
+  'log.hint':      { ko: '행을 클릭하면 SQL·Remote SQL·실행 계획이 펼쳐집니다',
+                     en: 'click a row for its SQL, remote SQL and plan' },
+  'log.total':     { ko: '이번 세션 쿼리',      en: 'Queries this session' },
+  'log.aggs':      { ko: '집계 쿼리',           en: 'Aggregates' },
+  'log.pushed':    { ko: 'ClickHouse로 내려간 것', en: 'Pushed to ClickHouse' },
+  'log.local':     { ko: 'Postgres가 센 것',    en: 'Counted in Postgres' },
+  'log.msPg':      { ko: 'Postgres 소요',       en: 'Time on Postgres' },
+  'log.msCh':      { ko: 'ClickHouse 소요',     en: 'Time on ClickHouse' },
+  'log.crossed':   { ko: '건너온 행 합계',      en: 'Rows across the wire' },
+  'log.c.n':       { ko: '#',            en: '#' },
+  'log.c.time':    { ko: '시각',         en: 'time' },
+  'log.c.kind':    { ko: '종류',         en: 'kind' },
+  'log.c.query':   { ko: '쿼리',         en: 'query' },
+  'log.c.schema':  { ko: '스키마',       en: 'schema' },
+  'log.c.where':   { ko: '실행된 곳',    en: 'ran on' },
+  'log.c.ms':      { ko: 'ms',           en: 'ms' },
+  'log.c.rows':    { ko: '반환 행',      en: 'rows out' },
+  'log.c.widest':  { ko: '최대 노드',    en: 'widest node' },
+  'log.c.wire':    { ko: '건넌 행',      en: 'across wire' },
+  'log.c.filter':  { ko: '필터',         en: 'filter' },
+
+  'wire.ext':    { ko: 'pg_clickhouse 확장',  en: 'pg_clickhouse extension' },
+  'wire.server': { ko: 'foreign server',      en: 'foreign server' },
+  'wire.tables': { ko: '개 foreign table',    en: ' foreign tables' },
+  'wire.compare':{ ko: '비교',                en: 'comparison' },
+
+  'side.local':  { ko: 'Postgres · 로컬 테이블',      en: 'Postgres · local tables' },
+  'side.remote': { ko: 'ClickHouse · foreign table',  en: 'ClickHouse · foreign tables' },
+  'side.measured': { ko: 'ANALYZE 실측',      en: 'measured by ANALYZE' },
+  'side.wall':     { ko: '실제 경과',         en: 'wall clock' },
+
+  'where.postgres':   { ko: 'Postgres',   en: 'Postgres' },
+  'where.clickhouse': { ko: 'ClickHouse', en: 'ClickHouse' },
+  'where.mixed':      { ko: '양쪽',       en: 'Both' },
+
+  'est': { ko: ' 추정', en: ' est.' },
+};
+
+/** The five things a plan can be, worded rather than inferred from a string. */
+const VERDICT = {
+  pushed:   { ko: 'Remote SQL이 집계를 담고 있습니다 — ClickHouse가 셌습니다',
+              en: 'the remote SQL carries the aggregation — ClickHouse did the counting' },
+  partial:  { ko: '원격에서 집계한 뒤 여기서 다시 집계했습니다',
+              en: 'aggregated remotely, then re-aggregated here' },
+  dragged:  { ko: 'foreign scan이 컬럼만 가져왔습니다 — 모든 행이 네트워크를 건너와 여기서 세어졌습니다',
+              en: 'the foreign scan selects columns only — every row crossed the network to be counted here' },
+  local:    { ko: '이 계획에는 foreign table이 없습니다 — 로컬 Postgres 테이블을 읽었습니다',
+              en: 'no foreign table in this plan — it read local Postgres tables' },
+  no_fdw:   { ko: 'foreign table이 설정되어 있지 않아 내려보낼 대상이 없습니다',
+              en: 'no foreign tables are configured, so there is nothing to push down' },
+  series:   { ko: '대시보드 차트 — 로컬 스캔, 푸시다운 대상이 아닙니다',
+              en: 'dashboard chart — local scan, never pushed down' },
+  geometry: { ko: 'PostGIS 지오메트리 — 원격에 대응물이 없습니다',
+              en: 'PostGIS geometry — there is no remote form of this' },
+};
+const verdictText = ran => tv(VERDICT[ran.verdict]) || ran.detail;
+
+const QLABEL = {
+  stations: { ko: '대여소',        en: 'Stations' },
+  voronoi:  { ko: '세력권',        en: 'Service areas' },
+  flows:    { ko: '이동 흐름',     en: 'Flows' },
+  pressure: { ko: '재배치 압력',   en: 'Rebalancing' },
+  character:{ ko: '출퇴근이냐 여가냐', en: 'Commuter or leisure' },
+  corridors:{ ko: '주요 통행축',   en: 'Heaviest corridors' },
+  districts:{ ko: '자치구별',      en: 'By district' },
+  hourly:   { ko: '시간대별',      en: 'Hour of day' },
+  timeseries:{ ko: '시간 흐름',    en: 'Over time' },
+};
+const QNOTE = {
+  stations: { ko: '필터 구간의 출발 건수로 크기를 정한 포인트. 대여 건수와의 조인은 정수 id로 하므로 지오메트리는 Postgres를 떠나지 않습니다.',
+              en: 'Points sized by departures in the filtered window. The join to the trip count is by integer id — geometry never leaves Postgres.' },
+  voronoi:  { ko: '전체 대여소에 대한 ST_VoronoiPolygons를 네트워크 외곽선으로 자른 것. ClickHouse에는 대응물이 없습니다.',
+              en: 'ST_VoronoiPolygons over every station, clipped to the network hull. There is no ClickHouse equivalent of this.' },
+  flows:    { ko: '가장 무거운 출발–도착 쌍을 선으로. 세는 일은 옮길 수 있지만 ST_MakeLine은 옮길 수 없습니다.',
+              en: 'The heaviest origin–destination pairs drawn as lines. The counting can move; ST_MakeLine cannot.' },
+  pressure: { ko: '대여소별 도착 빼기 출발. 빨강은 자전거가 빠져나가 채워 넣어야 하는 곳, 파랑은 쌓이는 곳입니다.',
+              en: 'Arrivals minus departures per station. Red drains and needs bikes brought in; blue fills up.' },
+  character:{ ko: '대여소별 피크 시간 비중과 주말 비중. 조건부 합 두 개와 카운트 하나 — 컬럼 스토어가 못 할 일이 아닙니다.',
+              en: 'Peak share against weekend share, per station. Two conditional sums and a count — nothing a column store cannot do.' },
+  corridors:{ ko: '출발–도착 쌍. stations를 두 번 조인하는데 셋 다 원격이므로 조인 전체가 옮겨갑니다.',
+              en: 'Origin–destination pairs. Joins two copies of stations to trips; all three are remote, so the whole join can move.' },
+  districts:{ ko: '수백만 행에서 25개 그룹으로 — 돌아오는 게 거의 없으니 푸시다운에 가장 유리한 경우입니다.',
+              en: 'Twenty-five groups out of millions of rows — the best possible case for pushing down, because almost nothing comes back.' },
+  hourly:   { ko: '24개 그룹. 구간의 모든 행을 읽고 시간당 한 줄을 돌려줍니다.',
+              en: 'Twenty-four groups. Reads every row in the window and returns one line per hour.' },
+  timeseries:{ ko: '버킷당 한 줄이고, 버킷은 직접 고릅니다. 굵은 버킷도 읽는 행은 똑같지만 돌아오는 행은 훨씬 적습니다 — 롤업의 값싼 절반이고, 컬럼 스토어가 시키지 않아도 하는 일입니다.',
+              en: 'One row per bucket, and the bucket is yours to pick. Coarser buckets read exactly the same rows but return far fewer — which is the cheap half of a rollup.' },
+};
+
+const BUCKET_LABEL = {
+  hour:    { ko: '1시간',  en: '1 hour' },
+  day:     { ko: '24시간', en: '24 hours' },
+  week:    { ko: '1주',    en: '1 week' },
+  month:   { ko: '1개월',  en: '1 month' },
+  quarter: { ko: '1분기',  en: '1 quarter' },
+};
+
+/** The filter, worded. Korean puts the qualifiers before the noun, so this is
+    assembled per language rather than joined from translated fragments. */
+function describeFilter(d) {
+  if (!d) return '';
+  const b = tv(BUCKET_LABEL[d.bucket]);
+  const bits = [];
+  if (LANG === 'ko') {
+    bits.push(`${d.from || '…'} ~ ${d.to || '…'} KST`);
+    if (d.districts && d.districts.length)
+      bits.push(d.districts.length === 1 ? d.districts[0] : `자치구 ${d.districts.length}곳`);
+    if (d.hours) bits.push(`${String(d.hours[0]).padStart(2, '0')}~${String(d.hours[1]).padStart(2, '0')}시 KST`);
+    if (d.daytype) bits.push(d.daytype === 'weekend' ? '주말' : '평일');
+    if (d.min_trips) bits.push(`${fmt(d.min_trips)}건 이상`);
+    bits.push(`${b} 단위`);
+  } else {
+    bits.push(`${d.from || '…'} → ${d.to || '…'} KST`);
+    if (d.districts && d.districts.length)
+      bits.push(d.districts.length === 1 ? d.districts[0] : `${d.districts.length} districts`);
+    if (d.hours) bits.push(`${String(d.hours[0]).padStart(2, '0')}–${String(d.hours[1]).padStart(2, '0')}h KST`);
+    if (d.daytype) bits.push(d.daytype);
+    if (d.min_trips) bits.push(`≥${fmt(d.min_trips)} trips`);
+    bits.push(`per ${b}`);
+  }
+  return bits.join(' · ');
+}
+
+const ABOUT_KO = `
+  <h3>이게 무엇인가</h3>
+  <p>ClickHouse Managed Postgres 실습입니다. Postgres냐 컬럼 스토어냐를 고를 필요가
+     없다는 주장을 합니다: 지리는 PostGIS가 있는 곳에 두고, 세는 일은 ClickHouse가
+     있는 곳으로 보내고, 정수로 조인합니다.</p>
+
+  <h3>두 방향은 별개의 사실입니다</h3>
+  <p><b>ClickPipes</b>는 Postgres를 ClickHouse <em>로</em> 복제합니다.
+     <b>pg_clickhouse</b>는 Postgres가 거기서 <em>다시 읽게</em> 합니다. 복제가 된다고
+     푸시다운이 되는 게 아닙니다 — 그건 Postgres 쪽에 foreign table이 있어야 합니다
+     (<code>sql/40-fdw-clickhouse.sql</code>). 푸시다운 탭이 이 둘을 따로 보고하는
+     이유는, 이 둘을 뭉뚱그리는 것이 옮겨가지도 않은 쿼리를 옮겨갔다고 믿게 되는
+     가장 쉬운 길이기 때문입니다.</p>
+
+  <h3>쿼리가 옮겨가려면 무엇이 참이어야 하나</h3>
+  <p>전부 아니면 전무이고, 두 단계입니다. 먼저 플래너는 조인에 참여하는
+     <em>모든</em> 릴레이션이 같은 foreign server에 있을 때만 foreign join을
+     만듭니다 — 로컬 테이블이 하나라도 섞이면 조인은 여기 남습니다. 그다음에야 그
+     위에 집계를 얹을지 검토하고, 모든 집계 함수와 <code>GROUP BY</code> 식,
+     <code>HAVING</code> 조건이 래퍼가 번역할 수 있는 것이어야 합니다. 둘 중 하나라도
+     어긋나면 부분적으로 내려가는 일은 없습니다: 집계 전체가 되돌아오고 원본 행이
+     네트워크를 건넙니다. 여기서 측정한 결과로는 집계 5종이 모두 푸시다운되며,
+     KST 필터가 만들어내는
+     <code>extract(hour FROM started_at + interval '9 hours')</code>도 포함입니다 —
+     ClickHouse 쪽에서 <code>toHour(started_at + 32400)</code>으로 번역됩니다.</p>
+
+  <h3>데이터</h3>
+  <p>서울시 공공자전거(따릉이), 서울 열린데이터광장, 공공누리 제1유형 —
+     출처 표시 후 상업적 이용과 변형이 모두 가능합니다. API 키가 필요 없습니다.</p>
+  <ul>
+    <li><code>OA-13252</code> 공공자전거 대여소 정보 — 위경도가 있는 대여소 2,789개</li>
+    <li><code>OA-15182</code> 공공자전거 대여이력 정보 — 대여 한 건이 한 행</li>
+  </ul>
+  <p>실제 한 달치는 공개된 그대로 적재하고, 나머지는 실제 대여를 새로운 시각으로
+     재표집해 생성합니다. 출발지·도착지·이용시간·이용자가 시간대에 묶여 있도록
+     유지합니다.</p>
+
+  <h3>저장은 UTC, 화면은 KST</h3>
+  <p>원본은 한국 지역시로 발행되고 컬럼에는 타임존이 없습니다. ClickHouse는
+     <code>DateTime</code>에 타임존을 붙이고 Postgres는 붙이지 않으므로, 같은 숫자가
+     저쪽에서는 아홉 시간 이르다는 뜻이 됩니다. 테이블은 UTC로 저장합니다. 이
+     페이지의 모든 필터와 축은 한국 지역시이고 변환은 한 곳에서만 합니다 — KST의
+     하루는 UTC 구간 <code>[D−9h, D+1−9h)</code>입니다.</p>
+
+  <h3>실행 버튼이 있는 이유</h3>
+  <p>2,400만 행 실제 서비스에서 측정: 최근 한 시간의 인덱스 조회는 18&nbsp;ms지만
+     <code>count(DISTINCT started_at::date)</code>는 14&nbsp;초, 일별 롤업 전체는
+     5&nbsp;초입니다. 값싼 인덱스 작업인 상단 pulse만 폴링하고, 스캔하는 것은 전부
+     여러분이 요청할 때까지 기다립니다. 이게 더 정직한 데모이기도 합니다 — 사실이
+     아직 Postgres에 있는 동안 어떤 질문이 비싼지 눈으로 볼 수 있으니까요.</p>
+
+  <h3>배지 읽는 법</h3>
+  <p>지도는 언제나 Postgres입니다 — 지오메트리에는 원격 형태가 없습니다. 나머지
+     배지는 실행 계획 트리에서 나옵니다. 문자열을 맞춰 보는 대신 JSON으로 순회하기
+     때문에 세 가지를 구분할 수 있습니다: 집계가 ClickHouse로 보내졌다, 행이 되돌아와
+     여기서 세어졌다, 그리고 계획에 foreign table이 아예 없다 — 마지막은 실패한
+     푸시다운이 아니라 없는 푸시다운입니다.</p>
+
+  <h3>출처</h3>
+  <p><a href="https://github.com/litkhai/clickhouse-hols">litkhai/clickhouse-hols</a>의
+     <code>managed-postgres/postgis-fdw-bike</code>.
+     배경지도 © CARTO, © OpenStreetMap contributors.</p>`;
+
+const ABOUT_EN = `
+  <h3>What this is</h3>
+  <p>A hands-on lab for ClickHouse Managed Postgres. It argues you do not have
+     to choose between Postgres and a column store: keep the geography where
+     PostGIS is, send the counting where ClickHouse is, and join on an integer.</p>
+
+  <h3>Two directions, two separate facts</h3>
+  <p><b>ClickPipes</b> replicates Postgres <em>into</em> ClickHouse.
+     <b>pg_clickhouse</b> lets Postgres read <em>back out</em> of it. Replication
+     working does not give you pushdown — that needs foreign tables on the
+     Postgres side (<code>sql/40-fdw-clickhouse.sql</code>). The Pushdown tab
+     reports the two independently, because conflating them is the easiest way
+     to believe a query moved when it never did.</p>
+
+  <h3>What has to be true for a query to move</h3>
+  <p>It is all-or-nothing, in two steps. First the planner will only build a
+     foreign join if <em>every</em> relation in it lives on the same foreign
+     server — one local table and the join stays here. Only then will it
+     consider putting the grouping on top, and only if every aggregate,
+     <code>GROUP BY</code> expression and <code>HAVING</code> clause is
+     something the wrapper can translate. Miss either and nothing partial
+     happens: the whole aggregate falls back and the base rows cross the
+     network. Measured here, all five aggregates push down — including the
+     <code>extract(hour FROM started_at + interval '9 hours')</code> the KST
+     filters generate, which arrives as
+     <code>toHour(started_at + 32400)</code>.</p>
+
+  <h3>The data</h3>
+  <p>Seoul public bike, from 서울 열린데이터광장, under 공공누리 제1유형 —
+     attribution, commercial use and modification allowed. No API key.</p>
+  <ul>
+    <li><code>OA-13252</code> 공공자전거 대여소 정보 — 2,789 stations with lat/lon</li>
+    <li><code>OA-15182</code> 공공자전거 대여이력 정보 — one row per trip</li>
+  </ul>
+  <p>One real month is loaded as published; the rest is generated by resampling
+     real trips into new timestamps, which keeps origin, destination, duration
+     and rider tied to the hour of day.</p>
+
+  <h3>Timestamps are UTC; this page speaks KST</h3>
+  <p>The source publishes Korean local time and the column carries no zone.
+     ClickHouse attaches a timezone to <code>DateTime</code> and Postgres does
+     not, so the same numbers would have meant nine hours earlier over there.
+     The table stores UTC. Every filter and axis here is Korean local time,
+     converted in one place — a KST day is the UTC range
+     <code>[D−9h, D+1−9h)</code>.</p>
+
+  <h3>Why there is a Run button</h3>
+  <p>Measured on the real service at 24M rows: an indexed lookup of the last
+     hour is 18&nbsp;ms, but <code>count(DISTINCT started_at::date)</code> is
+     14&nbsp;s and a full daily rollup is 5&nbsp;s. Only the cheap, indexed
+     pulse is polled; anything that scans waits for you to ask. That is also
+     the honest version of the demo — you can see which questions are expensive
+     while the facts are still in Postgres.</p>
+
+  <h3>Reading the badges</h3>
+  <p>Maps are always Postgres — geometry has no remote form. Elsewhere the
+     badge comes from the plan tree, walked as JSON rather than matched as
+     text, so it can tell apart three different things: the aggregation was
+     sent to ClickHouse; the rows came back and were counted here; or there is
+     no foreign table in the plan at all, which is not a failed pushdown but a
+     missing one.</p>
+
+  <h3>Source</h3>
+  <p><code>managed-postgres/postgis-fdw-bike</code> in
+     <a href="https://github.com/litkhai/clickhouse-hols">litkhai/clickhouse-hols</a>.
+     Basemap © CARTO, © OpenStreetMap contributors.</p>`;
+
+function applyI18n() {
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $('#langSwitch').innerHTML =
+    `<button id="langBtn" class="badge off" style="border:0;cursor:pointer;font:inherit;font-size:12px">` +
+    (LANG === 'ko' ? 'KO / <b style="opacity:.55">EN</b>' : '<b style="opacity:.55">KO</b> / EN') + `</button>`;
+  $('#langBtn').addEventListener('click', () => {
+    localStorage.setItem('bikeui.lang', LANG === 'ko' ? 'en' : 'ko');
+    location.reload();
+  });
+  $('#aboutKo').hidden = LANG !== 'ko';
+  $('#aboutEn').hidden = LANG === 'ko';
+  $('#aboutKo').innerHTML = ABOUT_KO;
+  $('#aboutEn').innerHTML = ABOUT_EN;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Charts. Hand-built SVG rather than a library: the page already loads one
+// heavy dependency for the map, and four small charts are not worth a second.
+// ─────────────────────────────────────────────────────────────────────────
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+};
+const tip = $('#tip');
+function showTip(evt, html) {
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const r = tip.getBoundingClientRect();
+  let x = evt.clientX + 14, y = evt.clientY - r.height - 10;
+  if (x + r.width > innerWidth - 8) x = evt.clientX - r.width - 14;
+  if (y < 8) y = evt.clientY + 16;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+
+/** Dates shorten to MM-DD; anything else is left alone. Blind truncation turned
+    the bucket "90–105" into "0–105", which is not a shorter label but a wrong one. */
+const axisLabel = v => /^\d{4}-\d{2}-\d{2}/.test(String(v))
+  ? String(v).slice(5, 10) : String(v);
+
+/** Nice round ticks, so the axis reads 0 / 50,000 / 100,000 rather than 0/47,318. */
+function ticks(max, count = 4) {
+  if (!(max > 0)) return [0];
+  const raw = max / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+  const out = [];
+  for (let v = 0; v <= max + step * 0.001; v += step) out.push(v);
+  return out;
+}
+
+function frame(host, height) {
+  host.innerHTML = '';
+  const w = Math.max(host.clientWidth || host.parentElement.clientWidth || 420, 260);
+  const svg = el('svg', { class: 'plot', width: w, height, viewBox: `0 0 ${w} ${height}` }, host);
+  svg.addEventListener('mouseleave', hideTip);
+  return { svg, w, h: height };
+}
+
+/** Vertical columns. One series, magnitude over an ordered axis. */
+function columns(host, rows, { xKey, yKey, color, height = 190, everyNth = 1, unit = 'trips' }) {
+  const { svg, w, h } = frame(host, height);
+  if (!rows.length) { host.innerHTML = `<p class="empty">${t('empty.noWindow')}</p>`; return; }
+  const padL = 52, padR = 12, padT = 12, padB = 26;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  const max = Math.max(...rows.map(r => +r[yKey]), 1);
+  const tk = ticks(max);
+  const top = tk[tk.length - 1];
+  const y = v => padT + ih - (v / top) * ih;
+
+  for (const t of tk) {
+    el('line', { class: 'gridline', x1: padL, x2: w - padR, y1: y(t), y2: y(t) }, svg);
+    el('text', { x: padL - 8, y: y(t) + 4, 'text-anchor': 'end' }, svg).textContent = compact(t);
+  }
+  el('line', { class: 'baseline', x1: padL, x2: w - padR, y1: y(0), y2: y(0) }, svg);
+
+  // ≤24px thick, and a 2px gap of surface between neighbours does the separating.
+  const band = iw / rows.length;
+  const bw = Math.max(1, Math.min(24, band - 2));
+  const peak = rows.reduce((a, b) => (+b[yKey] > +a[yKey] ? b : a), rows[0]);
+
+  rows.forEach((r, i) => {
+    const v = +r[yKey], cx = padL + band * i + band / 2;
+    const bh = Math.max(v > 0 ? 1 : 0, y(0) - y(v));
+    const rect = el('rect', {
+      x: cx - bw / 2, y: y(v), width: bw, height: bh,
+      rx: Math.min(4, bw / 2), fill: color
+    }, svg);
+    // Square at the baseline: cover the bottom rounding back up.
+    if (bh > 4) el('rect', { x: cx - bw / 2, y: y(0) - 4, width: bw, height: 4, fill: color }, svg);
+    const hit = el('rect', { x: padL + band * i, y: padT, width: band, height: ih,
+                             fill: 'transparent' }, svg);
+    hit.addEventListener('mousemove', e => showTip(e,
+      `<b>${esc(r[xKey])}</b><div class="row"><span>${unit}</span><span>${fmt(v)}</span></div>`));
+    rect.style.pointerEvents = 'none';
+
+    if (i % everyNth === 0 || i === rows.length - 1)
+      el('text', { x: cx, y: h - 8, 'text-anchor': 'middle' }, svg).textContent =
+        axisLabel(r[xKey]);
+  });
+
+  // One direct label, on the extreme — never a number on every column.
+  const pi = rows.indexOf(peak);
+  const px = padL + band * pi + band / 2;
+  el('text', { class: 'vlabel', x: Math.min(Math.max(px, padL + 18), w - padR - 18),
+               y: Math.max(y(+peak[yKey]) - 6, 12), 'text-anchor': 'middle' }, svg)
+    .textContent = compact(+peak[yKey]);
+}
+
+/** Two-series line over a shared ordered axis. Never a second y-scale. */
+function lines(host, rows, { xKey, series, height = 190, unit = 'trips' }) {
+  const { svg, w, h } = frame(host, height);
+  if (!rows.length) { host.innerHTML = `<p class="empty">${t('empty.noWindow')}</p>`; return; }
+  const padL = 52, padR = 16, padT = 14, padB = 26;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  const max = Math.max(1, ...rows.flatMap(r => series.map(s => +r[s.key])));
+  const tk = ticks(max), top = tk[tk.length - 1];
+  const x = i => padL + (rows.length === 1 ? iw / 2 : (iw * i) / (rows.length - 1));
+  const y = v => padT + ih - (v / top) * ih;
+
+  for (const t of tk) {
+    el('line', { class: 'gridline', x1: padL, x2: w - padR, y1: y(t), y2: y(t) }, svg);
+    el('text', { x: padL - 8, y: y(t) + 4, 'text-anchor': 'end' }, svg).textContent = compact(t);
+  }
+  el('line', { class: 'baseline', x1: padL, x2: w - padR, y1: y(0), y2: y(0) }, svg);
+
+  for (const s of series) {
+    const pts = rows.map((r, i) => [x(i), y(+r[s.key])]);
+    el('path', {
+      d: `M${pts.map(p => p.join(',')).join('L')}L${x(rows.length - 1)},${y(0)}L${x(0)},${y(0)}Z`,
+      fill: s.color, 'fill-opacity': 0.1
+    }, svg);
+    el('path', {
+      d: `M${pts.map(p => p.join(',')).join('L')}`, fill: 'none', stroke: s.color,
+      'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'
+    }, svg);
+    // Marker on the peak only, with a 2px surface ring so it survives a crossing.
+    let pi = 0;
+    rows.forEach((r, i) => { if (+r[s.key] > +rows[pi][s.key]) pi = i; });
+    el('circle', { cx: x(pi), cy: y(+rows[pi][s.key]), r: 5, fill: s.color,
+                   stroke: 'var(--panel)', 'stroke-width': 2 }, svg);
+  }
+
+  const cross = el('line', { class: 'baseline', y1: padT, y2: padT + ih,
+                             stroke: 'var(--tick)', opacity: 0 }, svg);
+  const band = iw / Math.max(rows.length - 1, 1);
+  rows.forEach((r, i) => {
+    const hit = el('rect', { x: x(i) - band / 2, y: padT, width: band, height: ih,
+                             fill: 'transparent' }, svg);
+    hit.addEventListener('mousemove', e => {
+      cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i));
+      cross.setAttribute('opacity', 0.45);
+      showTip(e, `<b>${esc(r[xKey])}:00 KST</b>` + series.map(s =>
+        `<div class="row"><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${s.color};margin-right:6px"></i>${s.label}</span>` +
+        `<span>${fmt(r[s.key])}</span></div>`).join(''));
+    });
+    hit.addEventListener('mouseleave', () => cross.setAttribute('opacity', 0));
+    if (i % 3 === 0)
+      el('text', { x: x(i), y: h - 8, 'text-anchor': 'middle' }, svg).textContent = r[xKey];
+  });
+}
+
+/** Horizontal bars — the right form when the categories are named, not ordered. */
+function barsH(host, rows, { labelKey, valueKey, color, unit = 'trips' }) {
+  const rowH = 26, padL = 96, padR = 58, padT = 6;
+  const height = rows.length * rowH + padT + 6;
+  const { svg, w } = frame(host, Math.max(height, 60));
+  if (!rows.length) { host.innerHTML = `<p class="empty">${t('empty.noWindow')}</p>`; return; }
+  const iw = w - padL - padR;
+  const max = Math.max(...rows.map(r => +r[valueKey]), 1);
+
+  rows.forEach((r, i) => {
+    const v = +r[valueKey], y = padT + i * rowH, bh = Math.min(18, rowH - 8);
+    const bw = Math.max(1, (v / max) * iw);
+    el('text', { x: padL - 10, y: y + bh - 3, 'text-anchor': 'end' }, svg)
+      .textContent = r[labelKey];
+    el('rect', { x: padL, y, width: bw, height: bh, rx: 4, fill: color }, svg);
+    el('rect', { x: padL, y, width: Math.min(4, bw), height: bh, fill: color }, svg);
+    el('text', { class: 'vlabel', x: padL + bw + 8, y: y + bh - 3 }, svg)
+      .textContent = compact(v);
+    const hit = el('rect', { x: 0, y, width: w, height: rowH, fill: 'transparent' }, svg);
+    hit.addEventListener('mousemove', e => showTip(e,
+      `<b>${esc(r[labelKey])}</b><div class="row"><span>${unit}</span><span>${fmt(v)}</span></div>`));
+  });
+}
+
+/** 60 points of "is it alive", inside a stat tile. */
+function sparkline(host, values, color) {
+  const { svg, w, h } = frame(host, 30);
+  if (!values.length) return;
+  const max = Math.max(...values, 1);
+  const x = i => (w * i) / Math.max(values.length - 1, 1);
+  const y = v => 28 - (v / max) * 26;
+  const pts = values.map((v, i) => [x(i), y(v)]);
+  el('path', { d: `M${pts.map(p => p.join(',')).join('L')}L${x(values.length - 1)},30L0,30Z`,
+               fill: color, 'fill-opacity': 0.1 }, svg);
+  el('path', { d: `M${pts.map(p => p.join(',')).join('L')}`, fill: 'none',
+               stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  const last = values.length - 1;
+  el('circle', { cx: x(last), cy: y(values[last]), r: 4, fill: color,
+                 stroke: 'var(--panel)', 'stroke-width': 2 }, svg);
+}
+
+function tableFor(host, rows, cols) {
+  host.innerHTML = '<table><thead><tr>' +
+    cols.map(c => `<th class="${c.num ? 'num' : ''}">${esc(c.label)}</th>`).join('') +
+    '</tr></thead><tbody>' + rows.map(r => '<tr>' +
+      cols.map(c => `<td class="${c.num ? 'num' : ''}">${esc(c.num ? fmt(r[c.key]) : r[c.key])}</td>`).join('') +
+    '</tr>').join('') + '</tbody></table>';
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Filters
+// ─────────────────────────────────────────────────────────────────────────
+let CAT = null, chosenDistricts = new Set(), running = false;
+let lastSeries = null, lastDashGeo = null;
+
+function filterQS() {
+  const p = new URLSearchParams();
+  p.set('from', $('#fFrom').value);
+  p.set('to', $('#fTo').value);
+  if (chosenDistricts.size) p.set('districts', [...chosenDistricts].join(','));
+  p.set('hour_from', $('#fHourFrom').value);
+  p.set('hour_to', $('#fHourTo').value);
+  p.set('daytype', $('#fDaytype').value);
+  p.set('min_trips', $('#fMin').value || '0');
+  p.set('bucket', $('#fBucket').value);
+  return p.toString();
+}
+
+function markDirty(why) {
+  $('#runBtn').classList.remove('clean');
+  $('#runState').classList.add('dirty');
+  $('#runState').textContent = why || t('run.dirty');
+}
+function markClean(text) {
+  $('#runBtn').classList.add('clean');
+  $('#runState').classList.remove('dirty');
+  $('#runState').textContent = text || '';
+}
+
+function buildFilters() {
+  const hf = $('#fHourFrom'), ht = $('#fHourTo');
+  for (let i = 0; i < 24; i++) {
+    hf.add(new Option(String(i).padStart(2, '0'), i));
+    ht.add(new Option(String(i).padStart(2, '0'), i));
+  }
+  hf.value = 0; ht.value = 23;
+  $('#fFrom').value = CAT.defaults.from; $('#fTo').value = CAT.defaults.to;
+  $('#fFrom').min = $('#fTo').min = CAT.bounds.oldest;
+  $('#fFrom').max = $('#fTo').max = CAT.bounds.newest;
+
+  const list = $('#fDistList');
+  // No "select all" button: selecting every district and selecting none produce
+  // the same rows, and only one of them adds a 25-element ANY(...) to every
+  // query on the page. Clearing is the way to mean "all".
+  list.innerHTML = `<div class="head"><button id="fDistClear">${t('f.clear')}</button></div>` +
+    CAT.districts.map(d =>
+      `<label><input type="checkbox" value="${esc(d)}">${esc(d)}</label>`).join('');
+  const syncDist = () => {
+    chosenDistricts = new Set(
+      Array.from(list.querySelectorAll('input:checked')).map(i => i.value));
+    $('#fDistBtn').textContent = chosenDistricts.size === 0
+      ? t('f.allDistricts')
+      : (chosenDistricts.size === 1 ? [...chosenDistricts][0]
+         : (LANG === 'ko' ? `자치구 ${chosenDistricts.size}곳`
+                          : `${chosenDistricts.size} districts`));
+    markDirty();
+  };
+  list.addEventListener('change', syncDist);
+  list.querySelector('#fDistClear').addEventListener('click', () => {
+    list.querySelectorAll('input').forEach(i => { i.checked = false; });
+    syncDist();
+  });
+  $('#fDistBtn').addEventListener('click', e => {
+    e.stopPropagation(); list.classList.toggle('open');
+  });
+  document.addEventListener('click', () => list.classList.remove('open'));
+  list.addEventListener('click', e => e.stopPropagation());
+
+  ['#fFrom', '#fTo', '#fHourFrom', '#fHourTo', '#fDaytype', '#fMin']
+    .forEach(s => $(s).addEventListener('change', () => markDirty()));
+  $('#runBtn').addEventListener('click', run);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Running. One button, and it means the tab you are looking at.
+// ─────────────────────────────────────────────────────────────────────────
+let activeTab = 'dash', activeMap = null, activeAgg = null, activePush = null;
+const loaded = { dash: false, maps: false, stats: false, push: false, log: false };
+
+function run() {
+  loaded[activeTab] = true;
+  if (activeTab === 'dash') return guarded(loadDashboard);
+  if (activeTab === 'maps') return guarded(() => loadMap(activeMap));
+  if (activeTab === 'stats') return guarded(() => loadAgg(activeAgg));
+  if (activeTab === 'push') return guarded(() => loadPushdown(activePush));
+  if (activeTab === 'log') return guarded(loadLog);
+}
+
+/** Wrap a loader so it shares the Run button's busy state and error reporting. */
+async function guarded(fn) {
+  if (running) return;
+  running = true;
+  $('#runBtn').disabled = true;
+  const t0 = performance.now();
+  const timer = setInterval(() => {
+    $('#runState').classList.remove('dirty');
+    $('#runState').textContent = `${t('run.running')} ${((performance.now() - t0) / 1000).toFixed(1)}s`;
+  }, 100);
+  try { await fn(); }
+  catch (e) {
+    console.error(e);
+    markDirty(t('run.failed') + e.message.slice(0, 60));
+  }
+  finally { clearInterval(timer); $('#runBtn').disabled = false; running = false; }
+}
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Dashboard — the pulse polls, everything else waits for Run
+// ─────────────────────────────────────────────────────────────────────────
+function kv(host, pairs) {
+  host.innerHTML = pairs.map(([k, v, cls]) =>
+    `<span>${esc(k)}</span><span class="${cls || ''}">${esc(v)}</span>`).join('');
+}
+
+async function loadPulse() {
+  let d;
+  try { d = await getJSON('/api/dashboard/pulse'); }
+  catch (e) { $('#ovCards').innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+
+  const behind = d.postgres.behind_seconds;
+  const behindTxt = behind == null ? '—' : (behind < 120 ? `${behind}s` : `${Math.round(behind / 60)}m`);
+  const perMin = d.minutes.length
+    ? Math.round(d.minutes.reduce((a, m) => a + m.value, 0) / d.minutes.length) : 0;
+
+  const newestAgo = LANG === 'ko' ? `최신 ${behindTxt} 전` : `newest ${behindTxt} ago`;
+  $('#ovCards').innerHTML = `
+    <div class="card tile"><small>${t('tile.trips')}</small><b>${compact(d.postgres.approx_trips)}</b>
+      <small>${esc(d.postgres.first)} → ${esc(d.postgres.last)} KST</small></div>
+    <div class="card tile"><small>${t('tile.arriving')}</small><b>${fmt(perMin)}<span style="font-size:14px;color:var(--muted)">${t('tile.perMin')}</span></b>
+      <div class="spark" id="sparkLive"></div></div>
+    <div class="card tile"><small>${t('tile.lastHour')}</small><b>${compact(d.postgres.last_hour)}</b>
+      <small>${newestAgo}</small></div>
+    <div class="card tile"><small>${t('tile.stations')}</small><b>${fmt(d.postgres.stations)}</b>
+      <small>${t('tile.stationsSub')}</small></div>
+    <div class="card tile"><small>${t('tile.disk')}</small><b>${esc(d.postgres.size)}</b>
+      <small>Postgres ${esc(d.postgres.version)}</small></div>`;
+  sparkline($('#sparkLive'), d.minutes.map(m => m.value), 'var(--s2)');
+
+  kv($('#ovPg'), [
+    [t('kv.version'), d.postgres.version],
+    [t('kv.rowsEst'), fmt(d.postgres.approx_trips)],
+    [t('kv.firstTrip'), d.postgres.first + ' KST'],
+    [t('kv.newestTrip'), d.postgres.last + ' KST'],
+    [t('kv.onDisk'), d.postgres.size],
+  ]);
+  const cdcOk = d.cdc.state === 'streaming' && d.cdc.slot_active === 'true';
+  kv($('#ovCdc'), [
+    [t('kv.state'), d.cdc.state, cdcOk ? 'ok' : 'warn'],
+    [t('kv.slot'), d.cdc.slot_active, d.cdc.slot_active === 'true' ? 'ok' : 'bad'],
+    [t('kv.wal'), d.cdc.unconsumed],
+    [t('kv.published'), d.cdc.published],
+  ]);
+  const genOk = d.generator.active === 'true';
+  kv($('#ovGen'), [
+    [t('kv.scheduled'), d.generator.active, genOk ? 'ok' : 'warn'],
+    [t('kv.runs'), fmt(d.generator.runs)],
+    [t('kv.lastRun'), d.generator.last],
+    [t('kv.newestTrip'), LANG === 'ko' ? behindTxt + ' 전' : behindTxt + ' ago',
+      behind != null && behind < 300 ? 'ok' : 'warn'],
+  ]);
+  const inSchema = d.fdw.foreign_schemas
+    ? (LANG === 'ko' ? ` (${d.fdw.foreign_schemas})` : ' in ' + d.fdw.foreign_schemas) : '';
+  kv($('#ovFdw'), [
+    [t('kv.extension'), d.fdw.extension ? 'pg_clickhouse' : t('kv.missing'), d.fdw.extension ? 'ok' : 'bad'],
+    [t('kv.server'), d.fdw.server_names || t('kv.none2'), d.fdw.servers ? 'ok' : 'warn'],
+    [t('kv.ftables'), d.fdw.foreign_tables + inSchema, d.fdw.foreign_tables ? 'ok' : 'warn'],
+    [t('kv.statsReads'), d.fdw.default_schema],
+    [t('kv.comparison'), d.fdw.ready && d.fdw.foreign_schema ? t('kv.available') : t('kv.unavailable'),
+      d.fdw.ready && d.fdw.foreign_schema ? 'ok' : 'warn'],
+  ]);
+
+  const b = $('#topbadge');
+  if (d.fdw.ready) { b.className = 'badge ch'; b.innerHTML = `<i class="dot"></i>${t('badge.fdwReady')}${d.fdw.foreign_tables}`; }
+  else if (cdcOk) { b.className = 'badge pg'; b.innerHTML = `<i class="dot"></i>${t('badge.cdcNoFdw')}`; }
+  else { b.className = 'badge off'; b.innerHTML = '<i class="dot"></i>CDC ' + esc(d.cdc.state); }
+}
+
+const SERIES_SPECS = {
+  daily: () => columns($('#ch-daily'), lastSeries.daily.rows,
+    { xKey: 'label', yKey: 'value', color: 'var(--s1)',
+      everyNth: Math.max(1, Math.ceil(lastSeries.daily.rows.length / 8)) }),
+  hourly: () => lines($('#ch-hourly'), lastSeries.hourly.rows,
+    { xKey: 'label', series: [
+      { key: 'weekday', label: 'Weekday', color: 'var(--s1)' },
+      { key: 'weekend', label: 'Weekend', color: 'var(--s2)' }] }),
+  districts: () => barsH($('#ch-districts'), lastSeries.districts.rows,
+    { labelKey: 'label', valueKey: 'value', color: 'var(--s1)' }),
+  duration: () => columns($('#ch-duration'), lastSeries.duration.rows,
+    { xKey: 'label', yKey: 'value', color: 'var(--s3)', everyNth: 2 }),
+};
+
+function drawSeries() {
+  if (!lastSeries) return;
+  for (const k of Object.keys(SERIES_SPECS)) {
+    if (!lastSeries[k]) continue;
+    SERIES_SPECS[k]();
+    $('#cost-' + k).textContent = ms(lastSeries[k].ms) + ' · Postgres';
+    const CH_COL = LANG === 'ko'
+      ? { hour: '시각 KST', district: '자치구', minutes: '분', day: '날짜 KST', trips: '대여' }
+      : { hour: 'Hour KST', district: 'District', minutes: 'Minutes', day: 'Day KST', trips: 'Trips' };
+    const cols = k === 'hourly'
+      ? [{ key: 'label', label: CH_COL.hour }, { key: 'weekday', label: t('lg.weekday'), num: 1 },
+         { key: 'weekend', label: t('lg.weekend'), num: 1 }]
+      : [{ key: 'label', label: k === 'districts' ? CH_COL.district
+                              : (k === 'duration' ? CH_COL.minutes : CH_COL.day) },
+         { key: 'value', label: CH_COL.trips, num: 1 }];
+    tableFor($('#tb-' + k), lastSeries[k].rows, cols);
+  }
+}
+
+async function loadDashboard() {
+  for (const k of Object.keys(SERIES_SPECS)) $('#cost-' + k).textContent = t('run.running');
+  $('#cost-map').textContent = t('run.running');
+  const d = await getJSON('/api/dashboard/series?' + filterQS());
+  lastSeries = d.series;
+  drawSeries();
+  // The map is the same PostGIS query the Maps tab runs — one round trip more,
+  // deliberately after the charts so the page fills in rather than sitting blank.
+  const g = await getJSON('/api/map/stations?' + filterQS());
+  lastDashGeo = g;
+  ensureDashMap();
+  drawDashMap();
+  $('#cost-map').textContent = `${ms(g.ms)} · ${fmt(g.geojson.features.length)} ${t('tile.stations')}`;
+  markClean(`${describeFilter(d.describe)} · ${t('run.chartsTotal')} ${ms(d.ms)}${
+    d.cached ? t('run.cached') : ''} · ${t('run.map')} ${ms(g.ms)}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Maps — two instances: one on the dashboard, one on its own tab
+// ─────────────────────────────────────────────────────────────────────────
+const LAYERS = ['lyr-fill', 'lyr-line', 'lyr-point'];
+
+function newMap(container) {
+  try {
+    const m = new maplibregl.Map({
+      container,
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      ...SEOUL, attributionControl: { compact: true }
+    });
+    m.addControl(new maplibregl.NavigationControl(), 'top-right');
+    return m;
+  } catch (e) {
+    $('#' + container).innerHTML =
+      `<p class="empty" style="padding:24px">${t('empty.webgl')}</p>`;
+    return null;
+  }
+}
+
+function paintFor(key, gj) {
+  const vals = gj.features.map(f => f.properties.departures ?? f.properties.trips ?? 0);
+  const hi = Math.max(...vals, 1);
+  if (key === 'stations')
+    return [{ id: 'lyr-point', type: 'circle', paint: {
+      'circle-radius': ['interpolate', ['linear'], ['get', 'departures'], 0, 3, hi, 17],
+      'circle-color': '#d95926', 'circle-opacity': .8,
+      'circle-stroke-width': 1, 'circle-stroke-color': '#1f1f24' } }];
+  if (key === 'voronoi')
+    return [{ id: 'lyr-fill', type: 'fill', paint: {
+        'fill-color': ['interpolate', ['linear'], ['get', 'departures'],
+          0, '#cde2fb', hi, '#104281'], 'fill-opacity': .55 } },
+      { id: 'lyr-line', type: 'line', paint: { 'line-color': '#2e2e35', 'line-width': .6 } }];
+  if (key === 'flows')
+    return [{ id: 'lyr-line', type: 'line', paint: {
+      'line-color': '#199e70',
+      'line-width': ['interpolate', ['linear'], ['get', 'trips'], 0, .5, hi, 4],
+      'line-opacity': .55 } }];
+  return [{ id: 'lyr-point', type: 'circle', paint: {
+    'circle-radius': ['interpolate', ['linear'], ['abs', ['get', 'net']], 0, 3, 4000, 15],
+    'circle-color': ['interpolate', ['linear'], ['get', 'net'],
+      -3000, '#d03b3b', 0, '#383835', 3000, '#2a78d6'],
+    'circle-opacity': .85 } }];
+}
+
+function paint(m, key, geojson) {
+  for (const id of LAYERS) if (m.getLayer(id)) m.removeLayer(id);
+  if (m.getSource('src')) m.removeSource('src');
+  m.addSource('src', { type: 'geojson', data: geojson });
+  for (const spec of paintFor(key, geojson)) m.addLayer({ ...spec, source: 'src' });
+  const top = m.getLayer('lyr-point') ? 'lyr-point'
+            : (m.getLayer('lyr-fill') ? 'lyr-fill' : 'lyr-line');
+  m.on('click', top, e => {
+    const p = e.features[0].properties;
+    new maplibregl.Popup().setLngLat(e.lngLat).setHTML(
+      Object.entries(p).filter(([k]) => !k.endsWith('_lon') && !k.endsWith('_lat'))
+        .map(([k, v]) => `<div><b>${esc(k)}</b> ${esc(v)}</div>`).join('')).addTo(m);
+  });
+  m.on('mouseenter', top, () => { m.getCanvas().style.cursor = 'pointer'; });
+  m.on('mouseleave', top, () => { m.getCanvas().style.cursor = ''; });
+}
+
+let dmap = null, dmapReady = false;
+function ensureDashMap() {
+  if (dmap) return dmap;
+  dmap = newMap('dashMap');
+  if (dmap) dmap.on('load', () => { dmapReady = true; drawDashMap(); });
+  return dmap;
+}
+function drawDashMap() {
+  if (!dmap || !dmapReady || !lastDashGeo) return;
+  paint(dmap, 'stations', lastDashGeo.geojson);
+}
+
+let map = null, mapReady = false, pendingMap = null;
+function ensureMap() {
+  if (map) return map;
+  map = newMap('map');
+  if (map) map.on('load', () => { mapReady = true; if (pendingMap) drawMap(pendingMap); });
+  return map;
+}
+function drawMap({ key, data }) {
+  if (!map) return;
+  if (!mapReady) { pendingMap = { key, data }; return; }
+  paint(map, key, data.geojson);
+}
+
+/** Maps and Statistics say the same things in the same order, so they share
+    the code that says them. Only the facts differ. */
+function fillAside(prefix, { title, note, ran, facts, sql }) {
+  $('#' + prefix + 'Title').textContent = title;
+  $('#' + prefix + 'Note').textContent = note;
+  $('#' + prefix + 'Verdict').innerHTML = verdictBadge(ran) +
+    `<p class="meta" style="margin:6px 0 0">${esc(verdictText(ran))}</p>`;
+  kv($('#' + prefix + 'Facts'), facts);
+  $('#' + prefix + 'Sql').textContent = sql;
+  $('#' + prefix + 'Plan').innerHTML = planTree(ran.nodes);
+}
+
+async function loadMap(key) {
+  key = key || CAT.maps[0].key;
+  activeMap = key;
+  $$('#mapnav button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  $('#mapTitle').textContent = tv(QLABEL[key]);
+  $('#mapNote').textContent = tv(QNOTE[key]);
+  ensureMap();
+  const d = await getJSON(`/api/map/${key}?` + filterQS());
+  drawMap({ key, data: d });
+  fillAside('map', {
+    title: tv(QLABEL[key]), note: tv(QNOTE[key]), ran: d.ran, sql: d.sql,
+    facts: [
+      [t('kv.schema'), d.schema],
+      [t('kv.features'), fmt(d.geojson.features.length)],
+      [t('kv.duration'), ms(d.ms)],
+      [t('kv.widest'), d.ran.rows_widest == null ? '—'
+        : compact(d.ran.rows_widest) + ' ' + t('kv.rows')],
+      [t('kv.crossed'), d.ran.rows_crossed == null ? t('kv.none')
+        : compact(d.ran.rows_crossed)],
+      [t('kv.filter'), describeFilter(d.describe)],
+    ],
+  });
+  markClean(describeFilter(d.describe));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Statistics — table on the left, everything that justifies it on the right
+// ─────────────────────────────────────────────────────────────────────────
+function whereName(w) {
+  return t(w === 'clickhouse' ? 'where.clickhouse'
+         : (w === 'mixed' ? 'where.mixed' : 'where.postgres'));
+}
+function whereCls(w) {
+  return w === 'clickhouse' ? 'ch' : (w === 'mixed' ? 'mix' : 'pg');
+}
+function verdictBadge(ran) {
+  return `<span class="badge ${whereCls(ran.where)}"><i class="dot"></i>${t('badge.ranOn')}${whereName(ran.where)}</span>`;
+}
+
+function planTree(nodes) {
+  if (!nodes || !nodes.length) return `<p class="meta">${t('empty.nothing')}</p>`;
+  return '<div class="plantree">' + nodes.map(n => {
+    const rows = n.actual_rows != null ? `${fmt(n.actual_rows)} ${t('kv.rows')}`
+               : (n.plan_rows != null ? `~${fmt(n.plan_rows)}${t('est')}` : '');
+    return `<div class="pnode ${n.remote ? 'remote' : ''}" style="margin-left:${n.depth * 14}px">` +
+      `<span class="ptype">${esc(n.type)}</span>` +
+      `<span style="color:var(--tick)">${esc(n.relation || '')}</span>` +
+      `<span class="prows">${rows}</span></div>`;
+  }).join('') + '</div>';
+}
+
+async function loadAgg(key) {
+  key = key || CAT.aggs[0].key;
+  activeAgg = key;
+  $$('#aggnav button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  $('#aggResult').innerHTML = `<p class="empty">${t('run.running')}</p>`;
+  const d = await getJSON(`/api/agg/${key}?side=${aggSide}&` + filterQS());
+
+  const bd = $('#aggbadge');
+  bd.className = 'badge ' + whereCls(d.ran.where);
+  bd.innerHTML = `<i class="dot"></i>${t('badge.ranOn')}${whereName(d.ran.where)} · ${t('kv.schema')} ${esc(d.schema)}`;
+
+  fillAside('agg', {
+    title: tv(QLABEL[key]), note: tv(QNOTE[key]),
+    ran: d.ran, sql: d.sql,
+    facts: [
+      [t('kv.bucket'), tv(BUCKET_LABEL[$('#fBucket').value])],
+      [t('kv.schema'), d.schema],
+      [t('kv.rowsOut'), fmt(d.rows.length)],
+      [t('kv.duration'), ms(d.ms)],
+      [t('kv.widest'), d.ran.rows_widest == null ? '—'
+        : compact(d.ran.rows_widest) + ' ' + t('kv.rows')],
+      [t('kv.crossed'), d.ran.rows_crossed == null ? t('kv.none')
+        : compact(d.ran.rows_crossed) + (d.ran.rows_crossed_measured ? '' : t('est'))],
+      [t('kv.filter'), describeFilter(d.describe)],
+    ],
+  });
+  recordBucket(key, d);
+  renderSideNav(d);
+  $('#aggRemoteBox').hidden = !d.ran.remote_sql;
+  $('#aggRemote').textContent = d.ran.remote_sql || '';
+
+  const numeric = d.columns.map((c, i) =>
+    d.rows.length > 0 && d.rows.every(r => r[i] === '' || !isNaN(Number(r[i]))));
+  $('#aggResult').innerHTML = d.rows.length
+    ? '<table><thead><tr>' + d.columns.map((c, i) =>
+        `<th class="${numeric[i] ? 'num' : ''}">${esc(c)}</th>`).join('') +
+      '</tr></thead><tbody>' + d.rows.map(r => '<tr>' + r.map((v, i) =>
+        `<td class="${numeric[i] ? 'num' : ''}">${esc(numeric[i] && v !== '' ? fmt(v) : v)}</td>`
+      ).join('') + '</tr>').join('') + '</tbody></table>'
+    : `<p class="empty">${t('empty.noRows')}</p>`;
+  markClean(describeFilter(d.describe));
+}
+
+let aggSide = 'auto';
+function renderSideNav(d) {
+  const avail = d.sides_available || {};
+  const opts = [['local', 'Postgres · ' + (avail.local || 'bike')]];
+  if (avail.foreign) opts.push(['foreign', 'ClickHouse · ' + avail.foreign]);
+  const noFdw = LANG === 'ko' ? 'foreign table 없음 — 푸시다운 탭 참고'
+                              : 'no foreign tables — see Pushdown';
+  const current = d.side;
+  $('#sideNav').innerHTML = opts.map(([k, label]) =>
+    `<button data-side="${k}" class="${k === current ? 'on' : ''}">${esc(label)}</button>`).join('') +
+    (avail.foreign ? '' : `<span class="meta" style="margin-left:6px">${noFdw}</span>`);
+  $$('#sideNav button').forEach(b => b.addEventListener('click', () => {
+    aggSide = b.dataset.side;
+    guarded(() => loadAgg(activeAgg));
+  }));
+}
+
+/* One row per bucket tried, per query. The point it makes is the one a single
+   run cannot: the scan does not get cheaper as the bucket widens — the same
+   rows are read either way — but the result does, and on the remote side that
+   is the difference between shipping a row per hour and a row per quarter. */
+const bucketRuns = {};
+function recordBucket(queryKey, d) {
+  const b = $('#fBucket').value;
+  (bucketRuns[queryKey] ||= {})[b] = {
+    rows: d.rows.length, ms: d.ms, where: d.ran.where,
+    crossed: d.ran.rows_crossed, widest: d.ran.rows_widest,
+  };
+  const order = ['hour', 'day', 'week', 'month', 'quarter'];
+  const tried = order.filter(k => bucketRuns[queryKey][k]);
+  $('#aggLedger').innerHTML = `<table><thead><tr><th>${t('kv.bucket')}</th>` +
+    `<th class="num">${t('kv.rows')}</th><th class="num">ms</th><th>${t('ledger.ranOn')}</th></tr></thead><tbody>` +
+    tried.map(k => {
+      const r = bucketRuns[queryKey][k];
+      return `<tr><td>${tv(BUCKET_LABEL[k])}${k === b ? ' ←' : ''}</td>` +
+             `<td class="num">${fmt(r.rows)}</td><td class="num">${Math.round(r.ms)}</td>` +
+             `<td><span class="badge ${whereCls(r.where)}">${whereName(r.where)}</span></td></tr>`;
+    }).join('') + '</tbody></table>' +
+    (tried.length < 2 ? `<p class="meta" style="margin-top:6px">${t('ledger.pick')}</p>` : '');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pushdown
+// ─────────────────────────────────────────────────────────────────────────
+function wireStrip(f) {
+  const yn = ok => ok ? 'yes' : 'no';
+  const mark = ok => ok ? '✓' : '✗';
+  const inSchema = f.foreign_schemas
+    ? (LANG === 'ko' ? ` (${esc(f.foreign_schemas)})` : ' in ' + esc(f.foreign_schemas)) : '';
+  const tables = LANG === 'ko' ? `foreign table ${f.foreign_tables}개${inSchema}`
+                               : `${f.foreign_tables} foreign tables${inSchema}`;
+  $('#pushWire').innerHTML = `
+    <span class="step ${yn(f.extension)}"><span class="mark">${mark(f.extension)}</span> ${t('wire.ext')}</span>
+    <span class="arrow">→</span>
+    <span class="step ${yn(f.servers > 0)}"><span class="mark">${mark(f.servers > 0)}</span> ${t('wire.server')}${f.server_names ? ' · ' + esc(f.server_names) : ''}</span>
+    <span class="arrow">→</span>
+    <span class="step ${yn(f.foreign_tables > 0)}"><span class="mark">${mark(f.foreign_tables > 0)}</span> ${tables}</span>
+    <span class="arrow">→</span>
+    <span class="step ${yn(f.ready && f.foreign_schema)}"><span class="mark">${mark(f.ready && f.foreign_schema)}</span> ${t('wire.compare')} ${f.ready && f.foreign_schema ? t('kv.available') : t('kv.unavailable')}</span>`;
+}
+
+function sideCard(s) {
+  if (s.error)
+    return `<div class="side"><h3>${s.side === 'local' ? 'Postgres' : 'ClickHouse'} — ${esc(s.schema)}</h3>
+            <p class="err">${esc(s.error)}</p></div>`;
+  const v = s.ran, isRemote = v.where === 'clickhouse';
+  const crossed = v.rows_crossed;
+  return `<div class="side ${isRemote ? 'chside' : 'pgside'}">
+    <div class="charthead"><h3>${s.side === 'local' ? t('side.local') : t('side.remote')}</h3>
+      <div class="spacer"></div>${verdictBadge(v)}</div>
+    <div class="bignum">${ms(s.ms)}<small>${s.analyzed ? t('side.measured') : t('side.wall')}</small></div>
+    <p class="meta" style="margin:6px 0 10px">${esc(verdictText(v))}</p>
+    <div class="kv">
+      <span>${t('kv.schema')}</span><span>${esc(s.schema)}</span>
+      <span>${t('kv.rowsOut')}</span><span>${s.rows == null ? '—' : fmt(s.rows)}</span>
+      <span>${t('kv.widest')}</span><span class="${v.rows_widest > 1e6 ? 'bad' : ''}">${
+        v.rows_widest == null ? '—' : compact(v.rows_widest) + ' ' + t('kv.rows')}</span>
+      <span>${t('kv.crossed')}</span><span class="${crossed > 1e6 ? 'bad' : (crossed != null ? 'ok' : '')}">${
+        crossed == null ? t('kv.none')
+        : fmt(crossed) + (v.rows_crossed_measured ? '' : t('est'))}</span>
+      <span>${t('kv.planNodes')}</span><span>${v.nodes.length}</span>
+    </div>
+    ${v.remote_sql ? `<details open><summary>${t('sum.remote')}</summary><pre>${esc(v.remote_sql)}</pre></details>` : ''}
+    <details><summary>${v.rows_crossed_measured ? t('sum.plan') : t('sum.planEst')}</summary>${planTree(v.nodes)}</details>
+    <details><summary>${t('sum.sql')}</summary><pre>${esc(s.sql)}</pre></details>
+  </div>`;
+}
+
+async function loadPushdown(key) {
+  key = key || CAT.aggs[0].key;
+  activePush = key;
+  $$('#pushnav button').forEach(b => b.classList.toggle('on', b.dataset.key === key));
+  $('#pushSides').innerHTML = `<p class="empty">${t('run.running')}</p>`;
+  const analyze = $('#pushAnalyze').checked ? '1' : '0';
+  const d = await getJSON(`/api/pushdown/run?name=${key}&analyze=${analyze}&` + filterQS());
+  wireStrip(d.fdw);
+
+  const B = LANG === 'ko' ? {
+    noFdw: `<div class="banner"><b>아직 내려보낼 곳이 없습니다 — foreign table이 하나도 없습니다.</b>
+      ClickPipes가 ClickHouse <em>로</em> 복제하는 것과, Postgres가 거기서 <em>다시 읽는</em> 것은 별개입니다.
+      후자는 이쪽에 <code>pg_clickhouse</code> foreign table이 있어야 합니다. 그전까지 아래 쿼리는 전부 로컬
+      Postgres에서 돌고, "Postgres"라는 배지는 "푸시다운이 실패했다"가 아니라 "보낼 데가 없었다"는 뜻입니다.
+      <code>sql/40-fdw-clickhouse.sql</code>을 실행하고 <code>FOREIGN_SCHEMA=ch</code>를 주세요.</div>`,
+    noSchema: (sc) => `<div class="banner"><b>foreign table은 있는데 이 페이지가 위치를 모릅니다.</b>
+      <code>FOREIGN_SCHEMA</code>를 해당 스키마(${sc})로 지정하면 비교가 켜집니다.</div>`,
+    stayed: `<div class="banner"><b>집계가 Postgres에 남았습니다.</b>
+      foreign scan이 결과가 아니라 컬럼을 가져왔습니다 — 어느 노드가 셌는지 실행 계획에서 확인하세요.</div>`,
+  } : {
+    noFdw: `<div class="banner"><b>Nothing can push down yet — there are no foreign tables.</b>
+      ClickPipes replicating <em>into</em> ClickHouse does not let Postgres read back out of it; that needs
+      <code>pg_clickhouse</code> foreign tables on this side. Until they exist, every query below runs on local
+      Postgres, and a badge saying "Postgres" means "there was nowhere else to send it" — not "pushdown failed".
+      Run <code>sql/40-fdw-clickhouse.sql</code>, then set <code>FOREIGN_SCHEMA=ch</code>.</div>`,
+    noSchema: (sc) => `<div class="banner"><b>Foreign tables exist, but this page has not been told where.</b>
+      Set <code>FOREIGN_SCHEMA</code> to the schema holding them (${sc}) to switch the comparison on.</div>`,
+    stayed: `<div class="banner"><b>The aggregation stayed in Postgres.</b>
+      The foreign scan came back with columns rather than a result — look at the plan tree to see which node
+      did the counting.</div>`,
+  };
+
+  const local = d.sides.find(s => s.side === 'local');
+  const remote = d.sides.find(s => s.side === 'foreign');
+  if (!d.fdw.ready) {
+    $('#pushBanner').innerHTML = B.noFdw;
+  } else if (!d.fdw.foreign_schema) {
+    $('#pushBanner').innerHTML = B.noSchema(esc(d.fdw.foreign_schemas));
+  } else if (remote && remote.ran && remote.ran.where === 'clickhouse') {
+    const speed = (local && local.ms && remote.ms) ? (local.ms / remote.ms) : null;
+    const answer = fmt(local && local.rows != null ? local.rows : (remote.rows ?? 0));
+    const widest = compact(local && local.ran ? local.ran.rows_widest : 0);
+    const measured = remote.ran.rows_crossed_measured;
+    $('#pushBanner').innerHTML = LANG === 'ko'
+      ? `<div class="banner good"><b>조인과 집계가 둘 다 ClickHouse로 갔습니다.</b>
+         원격 계획은 Foreign Scan 하나입니다 — ${measured
+           ? `${fmt(remote.ran.rows_crossed)}행이 네트워크를 건넜습니다`
+           : '완성된 결과만 건너왔습니다'}.
+         로컬 계획은 같은 ${answer}행을 얻으려고 ${widest}행을 조인과 정렬에 통과시켰고${
+           speed ? `, ${speed.toFixed(1)}배의 시간이 걸렸습니다` : ''}.
+         ${measured ? '' : 'EXPLAIN ANALYZE를 켜기 전까지 행 수는 플래너 추정치입니다.'}</div>`
+      : `<div class="banner good"><b>The join and the aggregation were both sent to ClickHouse.</b>
+         The remote plan is a single Foreign Scan — ${measured
+           ? `${fmt(remote.ran.rows_crossed)} rows crossed the wire`
+           : 'only the finished result crossed the wire'}. The local plan reached the same
+         ${answer} rows by putting ${widest} through a join and a sort${
+           speed ? `, taking ${speed.toFixed(1)}× as long` : ''}.
+         ${measured ? '' : 'Row counts here are planner estimates until you tick EXPLAIN ANALYZE.'}</div>`;
+  } else {
+    $('#pushBanner').innerHTML = B.stayed;
+  }
+  $('#pushSides').innerHTML = d.sides.map(sideCard).join('');
+  if (!d.analyzed)
+    $('#pushSides').insertAdjacentHTML('beforeend',
+      LANG === 'ko'
+        ? `<p class="meta" style="grid-column:1/-1">행 수는 플래너 추정치입니다. 위의
+           <b>EXPLAIN ANALYZE</b>를 켜면 쿼리를 실측하며 실행해 실제로 건너온 행 수를 얻습니다 —
+           실행이 한 번 더 들기 때문에 기본값이 아닙니다.</p>`
+        : `<p class="meta" style="grid-column:1/-1">Row counts are planner estimates. Tick
+           <b>EXPLAIN ANALYZE</b> above to run the query under measurement and get the number of rows that
+           really crossed — it costs one extra execution, which is why it is not the default.</p>`);
+  markClean(describeFilter(d.describe));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Log
+// ─────────────────────────────────────────────────────────────────────────
+let logAutoTimer = null;
+
+async function loadLog() {
+  const d = await getJSON('/api/log');
+  const s = d.summary;
+  $('#logSummary').innerHTML = [
+    [t('log.total'), fmt(s.total), ''],
+    [t('log.aggs'), fmt(s.aggregates), ''],
+    [t('log.pushed'), fmt(s.pushed_down), s.pushed_down ? 'ok' : ''],
+    [t('log.local'), fmt(s.aggregates_run_locally), ''],
+    [t('log.msPg'), ms(s.ms_postgres), ''],
+    [t('log.msCh'), ms(s.ms_clickhouse), ''],
+    [t('log.crossed'), compact(s.rows_crossed), ''],
+  ].map(([k, v, cls]) =>
+    `<div class="card"><small class="meta">${k}</small><b class="${cls}">${v}</b></div>`).join('');
+
+  if (!d.entries.length) { $('#logResult').innerHTML = `<p class="empty">${t('empty.nothing')}</p>`; return; }
+  $('#logResult').innerHTML = '<table><thead><tr>' +
+    `<th>${t('log.c.n')}</th><th>${t('log.c.time')}</th><th>${t('log.c.kind')}</th>` +
+    `<th>${t('log.c.query')}</th><th>${t('log.c.schema')}</th><th>${t('log.c.where')}</th>` +
+    `<th class="num">${t('log.c.ms')}</th><th class="num">${t('log.c.rows')}</th>` +
+    `<th class="num">${t('log.c.widest')}</th><th class="num">${t('log.c.wire')}</th>` +
+    `<th>${t('log.c.filter')}</th>` +
+    '</tr></thead><tbody>' +
+    d.entries.map(e => `
+      <tr class="logrow" data-n="${e.n}">
+        <td>${e.n}</td><td>${esc(e.at)}</td><td>${esc(e.kind)}</td><td>${esc(e.name)}</td>
+        <td>${esc(e.schema)}</td>
+        <td><span class="badge ${whereCls(e.where)}"><i class="dot"></i>${whereName(e.where)}</span></td>
+        <td class="num">${Math.round(e.ms)}</td>
+        <td class="num">${fmt(e.rows)}</td>
+        <td class="num">${e.widest == null ? '—' : compact(e.widest)}</td>
+        <td class="num">${e.crossed == null ? '—' : compact(e.crossed) + (e.crossed_measured ? '' : t('est'))}</td>
+        <td style="color:var(--muted)">${esc(describeFilter(e.describe))}</td>
+      </tr>
+      <tr class="logdetail" id="logd-${e.n}" hidden><td colspan="11">
+        <p class="meta" style="margin:0 0 8px"><b>${esc(tv(QLABEL[e.name.split(' ')[0]]) || e.name)}</b> — ${esc(verdictText(e))}</p>
+        <div class="grid2">
+          <div><b class="meta">${t('sum.sql')}</b><pre>${esc(e.sql)}</pre></div>
+          <div>${e.remote_sql
+            ? `<b class="meta">${t('sum.remote')}</b><pre>${esc(e.remote_sql)}</pre>`
+            : `<b class="meta">${t('sum.plan')}</b>` + planTree(e.nodes)}</div>
+        </div>
+        ${e.remote_sql ? `<div style="margin-top:8px"><b class="meta">${t('sum.plan')}</b>` + planTree(e.nodes) + '</div>' : ''}
+      </td></tr>`).join('') + '</tbody></table>';
+
+  $$('#logResult .logrow').forEach(tr => tr.addEventListener('click', () => {
+    const box = $('#logd-' + tr.dataset.n);
+    if (box) box.hidden = !box.hidden;
+  }));
+  markClean(LANG === 'ko' ? `${fmt(s.total)}개 쿼리 기록됨` : `${fmt(s.total)} queries logged`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tabs & boot
+// ─────────────────────────────────────────────────────────────────────────
+const TABS = ['dash', 'maps', 'stats', 'push', 'log', 'about'];
+
+function showTab(name) {
+  if (!TABS.includes(name)) name = 'dash';
+  activeTab = name;
+  if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $$('.tab').forEach(s => s.classList.toggle('on', s.id === 'tab-' + name));
+  $('#filters').classList.toggle('hide', name === 'about' || name === 'log');
+  if (name === 'maps') { ensureMap(); if (map) map.resize(); }
+  if (name === 'dash') { drawSeries(); if (dmap) dmap.resize(); }
+  if (name === 'log') { guarded(loadLog); return; }
+  if (name === 'about') return;
+  // Nothing heavy fires on a tab switch. The button is the only thing that
+  // starts a scan, so switching tabs to look at the page never costs somebody
+  // else's demo twenty seconds.
+  if (!loaded[name]) markDirty(t('run.loadTab'));
+}
+
+let resizeTimer = null;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (activeTab === 'dash') drawSeries(); }, 150);
+});
+
+$$('.tbtn').forEach(b => b.addEventListener('click', () => {
+  const host = $('#tb-' + b.dataset.table);
+  host.hidden = !host.hidden;
+  b.textContent = host.hidden ? t('btn.table') : t('btn.chart');
+}));
+
+(async () => {
+  try {
+    CAT = await getJSON('/api/catalog');
+  } catch (e) {
+    document.body.insertAdjacentHTML('afterbegin',
+      `<p class="err" style="padding:20px">Cannot reach the database: ${esc(e.message)}</p>`);
+    return;
+  }
+  applyI18n();
+  buildFilters();
+
+  const navBtn = k => `<button data-key="${k}">${esc(tv(QLABEL[k]) || k)}</button>`;
+  $('#mapnav').innerHTML = CAT.maps.map(m => navBtn(m.key)).join('');
+  $('#aggnav').innerHTML = CAT.aggs.map(a => navBtn(a.key)).join('');
+  $('#pushnav').innerHTML = CAT.aggs.map(a => navBtn(a.key)).join('');
+
+  // Picking a different query is itself a request to run it — the Run button is
+  // there for re-running after a filter change, not an extra step per click.
+  $$('#mapnav button').forEach(b => b.addEventListener('click', () => {
+    loaded.maps = true; guarded(() => loadMap(b.dataset.key));
+  }));
+  $$('#aggnav button').forEach(b => b.addEventListener('click', () => {
+    loaded.stats = true; guarded(() => loadAgg(b.dataset.key));
+  }));
+  $$('#pushnav button').forEach(b => b.addEventListener('click', () => {
+    loaded.push = true; guarded(() => loadPushdown(b.dataset.key));
+  }));
+  $('#fBucket').addEventListener('change', () => {
+    loaded.stats = true; guarded(() => loadAgg(activeAgg));
+  });
+  $('#pushAnalyze').addEventListener('change', () => {
+    if (loaded.push) guarded(() => loadPushdown(activePush));
+  });
+  $('#logRefresh').addEventListener('click', () => guarded(loadLog));
+  $('#logAuto').addEventListener('change', setLogAuto);
+  $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  await loadPulse();
+  setInterval(() => { if (activeTab === 'dash') loadPulse(); }, 15000);
+  setLogAuto();
+  addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+  // A tab in the URL so a particular view can be linked to — and so the page
+  // can be opened straight onto the thing being demonstrated.
+  const start = location.hash.slice(1);
+  if (start && TABS.includes(start) && start !== 'dash') {
+    showTab(start);
+    if (start !== 'about') await run();
+  } else {
+    loaded.dash = true;
+    await guarded(loadDashboard);
+  }
+})();
+
+function setLogAuto() {
+  clearInterval(logAutoTimer);
+  if (!$('#logAuto').checked) return;
+  logAutoTimer = setInterval(() => {
+    if (activeTab === 'log' && !running) loadLog().catch(() => {});
+  }, 5000);
+}
+</script>
+</body>
+</html>

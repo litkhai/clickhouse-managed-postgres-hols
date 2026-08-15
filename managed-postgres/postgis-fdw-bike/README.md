@@ -64,6 +64,36 @@ hostname, which carries the service name and id.
 | `sql/10-spatial-postgres.sql` | Five spatial queries that cannot leave Postgres |
 | `sql/20-aggregate-pushdown.sql` | Five aggregates meant to run on ClickHouse |
 | `sql/30-generator-in-db.sql` | pg_cron + a procedure, so the feed runs server-side |
+| `sql/40-fdw-clickhouse.sql` | Foreign tables over the ClickHouse copy, so the aggregates can move |
+
+### The dashboard
+
+```bash
+cd ui && docker compose --env-file ../config.env up --build
+open http://localhost:8080
+```
+
+Five tabs over the same filter — a KST date range, districts, hours, weekday or
+weekend, a minimum group size:
+
+| Tab | |
+|---|---|
+| Dashboard | The map and the charts on one grid: station demand from PostGIS, trips per day, hour of day, busiest districts, trip length |
+| Maps | The four spatial queries, each with the SQL and plan that produced it |
+| Statistics | The five aggregates, with a switch for **which side answers** — `bike` locally or `ch` on ClickHouse — and a bucket from one hour to one quarter |
+| Pushdown | The same query run on both sides at once: timings, the Remote SQL that was actually sent, and how many rows each plan moved |
+| Log | Every query the session ran, with its verdict, its widest plan node and what crossed the wire |
+
+Only the pulse at the top polls; it is index work and costs about 200 ms.
+Anything that scans waits for **Run query**, because at 24M rows a daily rollup
+is 5 s and `count(DISTINCT started_at::date)` is 14 s — measured, which is why
+they are not on a timer.
+
+Set `FOREIGN_SCHEMA=ch` once `sql/40-fdw-clickhouse.sql` has run and the
+Pushdown tab starts comparing the two sides. Korean by default; `?lang=en` or
+the KO/EN switch in the header for English.
+
+How it was built, with the measurements: [WRITEUP-UI.md](WRITEUP-UI.md).
 
 ### The tables
 
@@ -302,6 +332,35 @@ id가 들어 있어 출력은 마스킹됩니다.
 | `sql/10-spatial-postgres.sql` | Postgres를 떠날 수 없는 공간 쿼리 5개 |
 | `sql/20-aggregate-pushdown.sql` | ClickHouse에서 돌아야 할 집계 5개 |
 | `sql/30-generator-in-db.sql` | pg_cron + 프로시저 — 서버에서 자동 생성 |
+| `sql/40-fdw-clickhouse.sql` | ClickHouse 복제본 위의 foreign table — 집계를 옮기기 위한 것 |
+
+### 대시보드
+
+```bash
+cd ui && docker compose --env-file ../config.env up --build
+open http://localhost:8080
+```
+
+탭 다섯 개가 같은 필터(KST 기간·자치구·시간대·평일/주말·최소 그룹 크기)를 공유합니다:
+
+| 탭 | |
+|---|---|
+| Dashboard | 맵과 차트를 한 화면에: PostGIS 대여소 수요, 일별 대여, 시간대 프로파일, 자치구 순위, 이용 시간 분포 |
+| Maps | 공간 쿼리 4종 — 각각 그 지도를 만든 SQL과 플랜을 함께 표시 |
+| Statistics | 집계 5종. **어느 쪽이 답하는지**를 전환(`bike` 로컬 / `ch` ClickHouse)하고, 버킷을 1시간~1분기로 선택 |
+| Pushdown | 같은 쿼리를 양쪽에서 동시에 실행 — 소요 시간, 실제로 전송된 Remote SQL, 각 플랜이 옮긴 행 수 |
+| Log | 세션이 실행한 모든 쿼리 — 판정, 가장 넓은 플랜 노드, 네트워크를 건넌 행 수 |
+
+상단 pulse만 폴링하며 인덱스 작업이라 200ms 정도입니다. 스캔하는 것은 전부
+**Run query**를 기다립니다. 2,400만 행에서 일별 롤업이 5초,
+`count(DISTINCT started_at::date)`가 14초이기 때문입니다 — 측정값이고, 그래서
+타이머에 걸지 않았습니다.
+
+`sql/40-fdw-clickhouse.sql`을 실행한 뒤 `FOREIGN_SCHEMA=ch`를 주면 Pushdown
+탭이 양쪽을 비교하기 시작합니다. 기본 언어는 한국어이고, `?lang=en` 또는 헤더의
+KO/EN 전환으로 영어를 볼 수 있습니다.
+
+만든 과정과 측정값: [WRITEUP-UI.md](WRITEUP-UI.md).
 
 ### 테이블
 

@@ -552,6 +552,7 @@ sql/02-verify.sql             무엇이 적재됐고 데이터가 어디서 모�
 sql/10-spatial-postgres.sql   남아야 하는 쿼리 5개
 sql/20-aggregate-pushdown.sql 옮겨야 하는 쿼리 5개
 sql/30-generator-in-db.sql    pg_cron + 프로시저, 모델 테이블은 bikegen
+sql/40-fdw-clickhouse.sql     ch.trips / ch.stations — 같은 쿼리 텍스트가 양쪽에 나가도록
 
 scripts/fetch-data.sh         다운로드, 파일명 검증 포함
 scripts/load-stations.sh      xlsx → PostGIS, 지오메트리 + GiST 인덱스
@@ -562,6 +563,9 @@ scripts/shift-to-utc.sh       1회 변환, PK 구간 단위
 scripts/generate-trips.sh     클라이언트 측 실시간 피드
 scripts/explain-pushdown.sh   푸시다운 됐나?
 scripts/psql.sh               컨테이너 psql
+
+ui/app.py                     표준 라이브러리 + psycopg. 플랜을 JSON으로 걸어 판정
+ui/index.html                 대시보드·지도·통계·푸시다운·로그, 의존성은 MapLibre 하나
 ```
 
 모두 `psql`을 컨테이너로 실행하므로 설치할 것이 없습니다. 접속 호스트에 서비스
@@ -581,7 +585,22 @@ ln -s ../provisioning/config.env config.env
 ./scripts/psql.sh -c "SELECT bike.generator_schedule('1 minute')"
 ```
 
-### 9. 인용할 만한 수치
+### 9. UI가 정직해야 하는 지점
+
+플랜을 문자열로 grep 하면 세 가지를 구분하지 못합니다: 집계가 ClickHouse로
+갔다, 행이 끌려와 여기서 세어졌다, 그리고 **애초에 foreign table이 없어서 보낼
+데가 없었다**. 마지막 경우에 "Postgres에서 실행됨"이라고만 쓰면 푸시다운이
+실패한 것처럼 읽힙니다. 그래서 `EXPLAIN (FORMAT JSON)`을 트리로 걸어
+`Foreign Scan` 노드와 그 위에 남은 집계 노드를 직접 봅니다.
+
+`COSTS OFF`를 쓰면 `Plan Rows`까지 사라져 "몇 행이 넘어왔나"를 읽을 수 없다는
+것도 실제로 부딪히고 나서야 알았습니다. 추정값과 `EXPLAIN ANALYZE`로 잰 실측을
+화면에서 구분해 표시합니다.
+
+폴링도 마찬가지입니다. 첫 버전은 `count(DISTINCT started_at::date)`를 15초마다
+불렀는데, 그 쿼리 자체가 14.3초입니다. 사실상 쉬지 않고 돌고 있었습니다.
+
+### 10. 인용할 만한 수치
 
 | | |
 |---|---|
@@ -594,3 +613,8 @@ ln -s ../provisioning/config.env config.env
 | 백필 | 2,220만 행 생성·적재 |
 | 기본키 추가 | 164만 행 7.7초 |
 | 실시간 피드 | 비피크 시간대 5분당 약 480건 |
+| 푸시다운 (28일 구간) | 로컬 9.6초 / 원격 1.3초, 플랜 노드 10개 → 1개 |
+| 넘어온 행 | 로컬은 346만 행을 정렬, 원격은 15행 회수 |
+| ClickHouse 쪽 확인 | `system.query_log`에 24.11M 행 읽고 15행 반환 |
+| 버킷 롤업 | 1시간·24시간·1주·1달·1분기 전부 푸시다운 |
+| pulse 엔드포인트 | 204~235ms (인덱스만), 대체 전 `count(DISTINCT date)`는 14.3초 |
