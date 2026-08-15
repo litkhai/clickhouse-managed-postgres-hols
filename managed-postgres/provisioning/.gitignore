@@ -1,0 +1,3 @@
+# Real connection details never belong in a public repository.
+config.env
+*.log
