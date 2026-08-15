@@ -6,9 +6,10 @@
 
 ## English
 
-> **Status: in progress.** [`provisioning/`](provisioning/) is written and was
-> verified against a live service on 2026-08-15. The other areas below are
-> drafted from the product documentation and not written yet.
+> **Status: in progress.** Two labs are written and were verified against a live
+> service on 2026-08-15 — [`provisioning/`](provisioning/) and
+> [`postgis-fdw-bike/`](postgis-fdw-bike/). The remaining areas below are drafted
+> from the product documentation and not written yet.
 
 Hands-on labs for [ClickHouse Managed Postgres](https://clickhouse.com/docs/products/managed-postgres/overview)
 — the managed Postgres service ClickHouse runs in partnership with Ubicloud,
@@ -20,17 +21,21 @@ why it sits at the top level next to `chc/` instead of inside it.
 
 ### 📋 Scope
 
-Areas taken from the product's documentation. Only the ticked one exists so far.
+Areas taken from the product's documentation. Ticked ones exist.
 
-| Area | What a lab would cover |
-|------|------------------------|
-| [`provisioning/`](provisioning/) ✅ | Create a service over the Cloud API; connect and verify — **done** |
-| [`postgis-fdw-bike/`](postgis-fdw-bike/) | PostGIS geometry + Seoul bike trip facts, replicated to ClickHouse and read back through `pg_clickhouse`. Includes a dashboard that shows, per query, which side answered |
-| `pg_clickhouse` | The Postgres extension that reaches into ClickHouse — [tutorial](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial) |
-| ClickHouse integration | Moving and querying across the two engines |
-| Migrations | ClickPipes, PeerDB, logical replication, `pg_dump`/`pg_restore` |
+| Area | What a lab covers |
+|------|-------------------|
+| [`provisioning/`](provisioning/) ✅ | Create a service over the Cloud API; connect and verify |
+| [`postgis-fdw-bike/`](postgis-fdw-bike/) ✅ | PostGIS geometry beside 24M Seoul bike trips, replicated to ClickHouse by ClickPipes and read back through `pg_clickhouse`. A dashboard shows, per query, which side answered — and the plan proving it |
 | Operations | Read replicas, scaling, high availability, backup and restore |
 | Monitoring | Metrics, query insights, Prometheus |
+
+`pg_clickhouse`, the ClickHouse integration and the ClickPipes/PeerDB migration
+path are all exercised inside `postgis-fdw-bike/` rather than getting labs of
+their own — the point of each is easier to see against real data than in
+isolation. The extension's own
+[tutorial](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial)
+covers the minimal version.
 
 ### 🏠 Local development
 
@@ -56,8 +61,9 @@ verified against a running instance before it is written down.
 
 ## 한국어
 
-> **상태: 진행 중.** [`provisioning/`](provisioning/)은 작성 완료했고
-> 2026-08-15에 실제 서비스로 검증했습니다. 아래 나머지 영역은 제품 문서를 보고
+> **상태: 진행 중.** 랩 두 개를 작성했고 2026-08-15에 실제 서비스로
+> 검증했습니다 — [`provisioning/`](provisioning/)과
+> [`postgis-fdw-bike/`](postgis-fdw-bike/). 아래 나머지 영역은 제품 문서를 보고
 > 잡은 초안이며 아직 작성하지 않았습니다.
 
 [ClickHouse Managed Postgres](https://clickhouse.com/docs/products/managed-postgres/overview)
@@ -70,17 +76,20 @@ ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, `chc/` 안�
 
 ### 📋 범위
 
-제품 문서를 보고 뽑은 주제입니다. 체크 표시된 것만 실제로 작성돼 있습니다.
+제품 문서를 보고 뽑은 주제입니다. 체크 표시된 것이 작성돼 있습니다.
 
-| 영역 | 다룰 내용 |
+| 영역 | 다루는 내용 |
 |------|-----------|
-| [`provisioning/`](provisioning/) ✅ | Cloud API로 서비스 생성, 접속·검증 — **완료** |
-| [`postgis-fdw-bike/`](postgis-fdw-bike/) | PostGIS 지오메트리 + 서울 따릉이 대여이력. ClickHouse로 복제하고 `pg_clickhouse`로 다시 읽습니다. 쿼리마다 어느 쪽이 답했는지 보여주는 대시보드 포함 |
-| `pg_clickhouse` | ClickHouse를 호출하는 Postgres 확장 — [튜토리얼](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial) |
-| ClickHouse 연동 | 두 엔진 사이의 데이터 이동과 조회 |
-| 마이그레이션 | ClickPipes, PeerDB, 논리 복제, `pg_dump`/`pg_restore` |
+| [`provisioning/`](provisioning/) ✅ | Cloud API로 서비스 생성, 접속·검증 |
+| [`postgis-fdw-bike/`](postgis-fdw-bike/) ✅ | PostGIS 지오메트리와 2,400만 건의 따릉이 대여이력. ClickPipes로 ClickHouse에 복제하고 `pg_clickhouse`로 되읽습니다. 쿼리마다 어느 쪽이 답했는지와 그 근거인 실행 계획을 보여주는 대시보드 포함 |
 | 운영 | 읽기 복제본, 스케일링, 고가용성, 백업·복구 |
 | 모니터링 | 메트릭, 쿼리 인사이트, Prometheus |
+
+`pg_clickhouse`, ClickHouse 연동, ClickPipes/PeerDB 마이그레이션 경로는 별도 랩
+대신 `postgis-fdw-bike/` 안에서 함께 다룹니다 — 각각의 요점이 고립된 예제보다
+실제 데이터 위에서 훨씬 잘 보이기 때문입니다. 최소 예제는 확장 자체의
+[튜토리얼](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial)에
+있습니다.
 
 ### 🏠 로컬 개발
 
