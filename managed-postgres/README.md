@@ -27,6 +27,7 @@ Areas taken from the product's documentation. Ticked ones exist.
 |------|-------------------|
 | [`provisioning/`](provisioning/) ✅ | Create a service over the Cloud API; connect and verify |
 | [`postgis-fdw-bike/`](postgis-fdw-bike/) ✅ | PostGIS geometry beside 24M Seoul bike trips, replicated to ClickHouse by ClickPipes and read back through `pg_clickhouse`. A dashboard shows, per query, which side answered — and the plan proving it |
+| [`ny-citi-bike-workshop/`](ny-citi-bike-workshop/) ↗ | The same split on a **live** feed, across both managed products — a self-service workshop in [its own repository](https://github.com/litkhai/lightweight-workshop-ny-citi-bike) |
 | Operations | Read replicas, scaling, high availability, backup and restore |
 | Monitoring | Metrics, query insights, Prometheus |
 
@@ -82,6 +83,7 @@ ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, `chc/` 안�
 |------|-----------|
 | [`provisioning/`](provisioning/) ✅ | Cloud API로 서비스 생성, 접속·검증 |
 | [`postgis-fdw-bike/`](postgis-fdw-bike/) ✅ | PostGIS 지오메트리와 2,400만 건의 따릉이 대여이력. ClickPipes로 ClickHouse에 복제하고 `pg_clickhouse`로 되읽습니다. 쿼리마다 어느 쪽이 답했는지와 그 근거인 실행 계획을 보여주는 대시보드 포함 |
+| [`ny-citi-bike-workshop/`](ny-citi-bike-workshop/) ↗ | 같은 분업을 **실시간** 피드로, 두 관리형 제품에 걸쳐 — [별도 저장소](https://github.com/litkhai/lightweight-workshop-ny-citi-bike)의 자율 실습 워크숍 |
 | 운영 | 읽기 복제본, 스케일링, 고가용성, 백업·복구 |
 | 모니터링 | 메트릭, 쿼리 인사이트, Prometheus |
 
