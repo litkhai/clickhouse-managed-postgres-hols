@@ -53,13 +53,23 @@ hostname, which carries the service name and id.
 | `load-stations.sh` | Applies `sql/01-schema.sql`, loads stations, builds `geom` and a GiST index |
 | `load-trips.sh [month …]` | Stages the CP949 CSV, casts it, indexes it |
 | `stream-trips.sh` | Continuous insert in the same shape — `--rate`, `--interval`, `--batches` |
+| `psql.sh` | psql against the service; `-f /sql/02-verify.sql` for the checks |
 
 ### The tables
 
 `bike.stations` mirrors the spreadsheet and adds `geom geometry(Point, 4326)`,
 built from the published lat/lon. `bike.trips` keeps all sixteen source columns
-in their original order, so a ClickHouse table can mirror it one-for-one when
-the fact side moves.
+in their original order, plus a surrogate `trip_id`, so a ClickHouse table can
+mirror it when the fact side moves.
+
+The surrogate key is not decoration. The source has no natural one — all five of
+`bike_id`, both timestamps and both station ids still leave 96 rows non-unique,
+and those are real distinct trips that differ only in the distance recorded. And
+logical replication needs a replica identity: without a primary key ClickPipes
+refuses the table with *"cannot be replicated because they don't have a valid
+replica identity"*. `REPLICA IDENTITY FULL` would also clear that, but a
+`bigint` key gives the ClickHouse side something sensible to order and
+deduplicate on. Adding it to 1.64M rows took 7.7s.
 
 There is **no foreign key** from trips to stations. The history references
 stations the current master no longer lists — they get retired, and the master
@@ -111,6 +121,31 @@ GROUP BY s.district ORDER BY departures DESC LIMIT 5;
  양천구   |     108882 |    15.6 |       1120
  노원구   |      95279 |    17.4 |       1207
 ```
+
+### Replicating out
+
+ClickPipes/PeerDB picks up both tables once each has a primary key. From the
+Postgres side, a running mirror looks like this:
+
+```sql
+SELECT slot_name, plugin, active,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS unconsumed
+FROM pg_replication_slots;
+
+SELECT application_name, state, replay_lag FROM pg_stat_replication;
+```
+
+`confirmed_flush_lsn` advances in steps rather than continuously, because the
+consumer confirms once a batch has landed downstream — watching it for five
+seconds and concluding it is stuck is a mistake worth not making. Measured here:
+1,492 inserted rows pushed unconsumed WAL to 36 MB, which drained to zero within
+about half a minute.
+
+Watch two things. An **inactive slot retains WAL indefinitely** and will fill the
+disk, so `SELECT count(*) FROM pg_replication_slots WHERE NOT active` belongs in
+whatever you monitor. And the publication here names its tables explicitly; a
+`FOR ALL TABLES` publication would sweep up scratch tables too, which is why
+`stream-trips.sh` drops its sample table on exit.
 
 ### Where this stops
 
@@ -190,12 +225,21 @@ id가 들어 있어 출력은 마스킹됩니다.
 | `load-stations.sh` | `sql/01-schema.sql` 적용, 대여소 적재, `geom` 생성 + GiST 인덱스 |
 | `load-trips.sh [월 …]` | CP949 CSV를 스테이징 후 타입 변환·인덱스 |
 | `stream-trips.sh` | 동일 포맷으로 지속 삽입 — `--rate`, `--interval`, `--batches` |
+| `psql.sh` | 서비스에 psql 접속; 점검은 `-f /sql/02-verify.sql` |
 
 ### 테이블
 
 `bike.stations`는 원본 스프레드시트를 그대로 옮기고 공개된 위경도로
 `geom geometry(Point, 4326)`을 만듭니다. `bike.trips`는 원본 16개 컬럼을 순서
-그대로 유지합니다 — 팩트 쪽을 옮길 때 ClickHouse 테이블이 1:1로 대응되도록.
+그대로 유지하고 대리키 `trip_id`를 더합니다.
+
+이 대리키는 장식이 아닙니다. 원본에 자연키가 없습니다 — `bike_id`와 양쪽
+타임스탬프, 양쪽 대여소번호를 모두 합쳐도 96행이 겹치는데, 이는 중복이 아니라
+기록된 거리만 다른 별개의 대여입니다. 그리고 논리 복제에는 replica identity가
+필요해서, 기본키가 없으면 ClickPipes가 *"cannot be replicated because they
+don't have a valid replica identity"*로 테이블을 거부합니다. `REPLICA IDENTITY
+FULL`로도 해결되지만, `bigint` 키가 ClickHouse 쪽 정렬·중복제거 키로 쓰이므로
+그쪽을 택했습니다. 164만 행에 추가하는 데 7.7초 걸렸습니다.
 
 trips에서 stations로 가는 **외래키는 없습니다.** 이력에는 현재 마스터에 없는
 대여소가 등장합니다(폐지되었고, 마스터는 스냅샷이라). 제약을 걸면 실제 데이터가
@@ -224,6 +268,29 @@ trips에서 stations로 가는 **외래키는 없습니다.** 이력에는 현�
  영등포구 |     150935 |    16.7 |       1128
  송파구   |     144225 |    17.4 |       1224
 ```
+
+### 복제 내보내기
+
+두 테이블 모두 기본키가 생기면 ClickPipes/PeerDB가 잡아갑니다. 동작 중일 때
+Postgres 쪽에서 보이는 모습:
+
+```sql
+SELECT slot_name, plugin, active,
+       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS unconsumed
+FROM pg_replication_slots;
+
+SELECT application_name, state, replay_lag FROM pg_stat_replication;
+```
+
+`confirmed_flush_lsn`은 연속이 아니라 **계단식으로** 전진합니다. 소비자가 배치를
+다운스트림에 넣은 뒤에 확인하기 때문입니다 — 5초 보고 멈췄다고 판단하지 마세요.
+실측: 1,492행을 넣자 미소비 WAL이 36 MB까지 올랐다가 30초 안에 0이 됐습니다.
+
+두 가지를 지켜보세요. **비활성 슬롯은 WAL을 무한정 붙들어** 디스크를 채웁니다.
+`SELECT count(*) FROM pg_replication_slots WHERE NOT active`를 모니터링에 넣으
+세요. 그리고 여기 퍼블리케이션은 테이블을 명시적으로 지정합니다 —
+`FOR ALL TABLES`였다면 스크래치 테이블까지 딸려갔을 것이고, 그래서
+`stream-trips.sh`는 종료 시 표본 테이블을 지웁니다.
 
 ### 여기서 멈추는 이유
 

@@ -48,7 +48,12 @@ done
 echo
 echo "── typing and inserting ───────────────────────────"
 psql_stdin <<'SQL'
-INSERT INTO bike.trips
+-- Column list, not a bare INSERT: trip_id is GENERATED ALWAYS, so the
+-- positional form would try to write it and fail.
+INSERT INTO bike.trips (
+    bike_id, started_at, start_station_id, start_station_name, start_rack,
+    ended_at, end_station_id, end_station_name, end_rack, duration_min,
+    distance_m, birth_year, gender, user_type, start_station_code, end_station_code)
 SELECT bike_id,
        started_at::timestamp,
        nullif(start_station_id, '')::integer,

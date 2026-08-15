@@ -73,6 +73,10 @@ started=$(date +%s)
 
 finish() {
     local elapsed=$(( $(date +%s) - started ))
+    # Drop the scratch table rather than leaving 50k rows sitting in the same
+    # schema as the real ones — it is rebuilt on every run anyway, and a
+    # publication set to all tables would otherwise pick it up.
+    psql_c -c "DROP TABLE IF EXISTS bike.trip_shapes;" >/dev/null 2>&1 || true
     echo
     echo "stopped after ${batch} batches, ${inserted} trips in ${elapsed}s"
     [ "$elapsed" -gt 0 ] && echo "average $(( inserted / elapsed )) trips/s"
@@ -90,7 +94,10 @@ while :; do
     # because psql -q does not print the tag.
     n=$(psql_c -tA -c "
 WITH ins AS (
-INSERT INTO bike.trips
+INSERT INTO bike.trips (
+    bike_id, started_at, start_station_id, start_station_name, start_rack,
+    ended_at, end_station_id, end_station_name, end_rack, duration_min,
+    distance_m, birth_year, gender, user_type, start_station_code, end_station_code)
 SELECT bike_id,
        now()::timestamp - make_interval(mins => coalesce(duration_min, 0)),
        start_station_id, start_station_name, start_rack,

@@ -26,6 +26,15 @@ CREATE TABLE bike.stations (
 -- 대여이력 — the fact side. ~1.6M rows per month.
 DROP TABLE IF EXISTS bike.trips CASCADE;
 CREATE TABLE bike.trips (
+    -- A surrogate key, because the source has no natural one. Checked: even all
+    -- five of bike_id, both timestamps and both station ids leave 96 rows
+    -- non-unique — they are real, distinct trips that differ only in the
+    -- distance the system recorded.
+    --
+    -- It is not decoration. Logical replication needs a replica identity, and
+    -- without a primary key ClickPipes refuses the table outright. It also
+    -- gives the ClickHouse side a sensible key to order and deduplicate on.
+    trip_id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     bike_id            text,                  -- 자전거번호
     started_at         timestamp,             -- 대여일시
     start_station_id   integer,               -- 대여 대여소번호
@@ -47,4 +56,4 @@ CREATE TABLE bike.trips (
 -- No foreign key from trips to stations on purpose. The history contains
 -- station numbers that are not in the current master — stations get retired,
 -- and the master is a snapshot — so a constraint would reject real rows.
--- 03-verify.sql reports how many, rather than hiding them.
+-- 02-verify.sql reports how many, rather than hiding them.
