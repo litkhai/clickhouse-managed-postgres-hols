@@ -1,0 +1,50 @@
+-- Seoul public bike: geometry in PostGIS, trip facts alongside it.
+--
+-- The split this lab is built around: stations carry the geometry and stay in
+-- Postgres, because that is where the spatial work belongs. Trips are the fact
+-- table — the thing that grows without bound and only ever gets aggregated —
+-- so it is the side that later moves behind pg_clickhouse. Keeping the columns
+-- faithful to the source CSV here means the ClickHouse table can mirror them
+-- one-for-one when that happens.
+
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE SCHEMA IF NOT EXISTS bike;
+
+-- 대여소 — the geometry side. ~2,800 rows, effectively static.
+DROP TABLE IF EXISTS bike.stations CASCADE;
+CREATE TABLE bike.stations (
+    station_id  integer PRIMARY KEY,          -- 대여소번호
+    name        text    NOT NULL,             -- 보관소(대여소)명
+    district    text,                         -- 자치구
+    address     text,                         -- 상세주소
+    lat         double precision,
+    lon         double precision,
+    racks       integer,                      -- 거치대수
+    geom        geometry(Point, 4326)         -- built from lat/lon on load
+);
+
+-- 대여이력 — the fact side. ~1.6M rows per month.
+DROP TABLE IF EXISTS bike.trips CASCADE;
+CREATE TABLE bike.trips (
+    bike_id            text,                  -- 자전거번호
+    started_at         timestamp,             -- 대여일시
+    start_station_id   integer,               -- 대여 대여소번호
+    start_station_name text,                  -- 대여 대여소명
+    start_rack         integer,               -- 대여거치대
+    ended_at           timestamp,             -- 반납일시
+    end_station_id     integer,               -- 반납대여소번호
+    end_station_name   text,                  -- 반납대여소명
+    end_rack           integer,               -- 반납거치대
+    duration_min       integer,               -- 이용시간(분)
+    distance_m         numeric(12,2),         -- 이용거리(M)
+    birth_year         integer,               -- 생년
+    gender             text,                  -- 성별
+    user_type          text,                  -- 이용자종류
+    start_station_code text,                  -- 대여대여소ID  (ST-1461)
+    end_station_code   text                   -- 반납대여소ID
+);
+
+-- No foreign key from trips to stations on purpose. The history contains
+-- station numbers that are not in the current master — stations get retired,
+-- and the master is a snapshot — so a constraint would reject real rows.
+-- 03-verify.sql reports how many, rather than hiding them.

@@ -25,6 +25,7 @@ Areas taken from the product's documentation. Only the ticked one exists so far.
 | Area | What a lab would cover |
 |------|------------------------|
 | [`provisioning/`](provisioning/) ✅ | Create a service over the Cloud API; connect and verify — **done** |
+| [`postgis-fdw-bike/`](postgis-fdw-bike/) 🔨 | PostGIS geometry + Seoul bike trip facts — **Postgres half done**, ClickHouse side pending |
 | `pg_clickhouse` | The Postgres extension that reaches into ClickHouse — [tutorial](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial) |
 | ClickHouse integration | Moving and querying across the two engines |
 | Migrations | ClickPipes, PeerDB, logical replication, `pg_dump`/`pg_restore` |
@@ -74,6 +75,7 @@ ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, `chc/` 안�
 | 영역 | 다룰 내용 |
 |------|-----------|
 | [`provisioning/`](provisioning/) ✅ | Cloud API로 서비스 생성, 접속·검증 — **완료** |
+| [`postgis-fdw-bike/`](postgis-fdw-bike/) 🔨 | PostGIS 지오메트리 + 서울 따릉이 대여이력 — **Postgres 쪽 완료**, ClickHouse 쪽 예정 |
 | `pg_clickhouse` | ClickHouse를 호출하는 Postgres 확장 — [튜토리얼](https://clickhouse.com/docs/products/managed-postgres/extensions/pg_clickhouse/tutorial) |
 | ClickHouse 연동 | 두 엔진 사이의 데이터 이동과 조회 |
 | 마이그레이션 | ClickPipes, PeerDB, 논리 복제, `pg_dump`/`pg_restore` |

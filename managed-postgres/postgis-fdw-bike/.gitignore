@@ -1,0 +1,4 @@
+# Downloaded open data: 274 MB per month of trips. Fetch it, do not commit it.
+data/
+config.env
+*.log
