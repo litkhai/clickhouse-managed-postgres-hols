@@ -52,8 +52,15 @@ hostname, which carries the service name and id.
 | `fetch-data.sh [month …]` | Downloads station master and trip months into `data/` |
 | `load-stations.sh` | Applies `sql/01-schema.sql`, loads stations, builds `geom` and a GiST index |
 | `load-trips.sh [month …]` | Stages the CP949 CSV, casts it, indexes it |
-| `stream-trips.sh` | Continuous insert in the same shape — `--rate`, `--interval`, `--batches` |
+| `backfill-trips.sh` | Fills every missing day between the loaded history and yesterday |
+| `generate-trips.sh` | Live feed at the rate this hour of this weekday calls for |
+| `explain-pushdown.sh` | Says whether a query ran remotely or was dragged back |
 | `psql.sh` | psql against the service; `-f /sql/02-verify.sql` for the checks |
+
+| Query set | |
+|---|---|
+| `sql/10-spatial-postgres.sql` | Five spatial queries that cannot leave Postgres |
+| `sql/20-aggregate-pushdown.sql` | Five aggregates meant to run on ClickHouse |
 
 ### The tables
 
@@ -76,25 +83,59 @@ stations the current master no longer lists — they get retired, and the master
 is a snapshot — so the constraint would reject real rows. 17 station numbers in
 January's history are absent from the master, across 26,346 trips.
 
-### Streaming inserts
+### Filling the gap, and keeping it filled
 
-`stream-trips.sh` samples real origin–destination pairs out of the loaded
-history and re-inserts them with current timestamps. Origin–destination flow
-here is heavily skewed — a few stations near river crossings and campuses carry
-a disproportionate share, and duration tracks the pair — so inventing pairs
-uniformly would produce a table that aggregates into a shape the real one never
-takes. Only the timestamps are new.
+Two scripts, because they answer different questions.
+
+`backfill-trips.sh` asks the database which days between the first loaded trip
+and yesterday have no rows, and writes only those. Taking `max(started_at) + 1`
+as the starting point would have been simpler and was wrong — one streaming
+test had already put rows on today's date, which made February through August
+look covered.
 
 ```
-$ ./scripts/stream-trips.sh --rate 500 --interval 1 --batches 5
-  drew 50000 real trip shapes to sample from
-  batch 5          2486 trips inserted
-stopped after 5 batches, 2486 trips in 6s
-average 414 trips/s
+$ ./scripts/backfill-trips.sh --explain
+  weekday 60388 / weekend 37893 trips per day
+  days       : 195 missing, 2026-02-01 .. 2026-08-14
+  estimate   : 22,202,682 trips at scale 1.0
+  extrapolated months (no published data): [7, 8]
 ```
 
-A batch lands slightly under `--rate` because duplicate draws collapse; the
-count reported is what the insert returned, not what was asked for.
+Full volume is 22M rows, and every one replicates downstream, so it asks before
+starting. `--scale 0.1` gives the same shape at a tenth the size.
+
+`generate-trips.sh` runs continuously at whatever rate the current hour of the
+current weekday calls for, so an 8am Tuesday inserts several times what a 4am
+Tuesday does. Counts vary between windows — arrivals are drawn from a Poisson,
+because a fixed rate makes the feed tick like a metronome.
+
+**How the trips are made.** A generated trip is a real trip with a new
+timestamp, drawn from the pool of real trips that started in the same hour of
+the same kind of day. Every field here correlates with every other — morning
+trips run to subway stations and last eight minutes, Sunday afternoon trips run
+along the river and last forty, rider age shifts with both — so drawing each
+column from its own distribution would reproduce all the histograms and none of
+the joint structure. The OD matrix would go uniform and the aggregates this lab
+exists to demonstrate would flatten out.
+
+Measured against the real month, a generated week matches closely:
+
+| | real (Jan) | generated |
+|---|---|---|
+| share of weekday trips at 08:00 | 28.16% | 28.20% |
+| share at 18:00 | 26.55% | 26.49% |
+| mean duration | 17.1 min | 17.0 min |
+| mean distance | 1,724 m | 1,718 m |
+| round trips | 8.6% | 8.7% |
+
+What is *not* measured is the month-to-month scale — only January is loaded.
+The published monthly file sizes stand in for trip counts (280, 307, 501, 674,
+690, 716 MB for 2026-01 to 06), and July and August are extrapolated from June
+because they are not published yet. `--explain` names the guessed months.
+
+One honest limit: sampling every *n*th trip misses the rarest stations, so a
+generated week covered 2,541 of the 2,768 origin stations. Raise `--sample` if
+that matters.
 
 ### What the spatial side looks like
 
@@ -224,8 +265,15 @@ id가 들어 있어 출력은 마스킹됩니다.
 | `fetch-data.sh [월 …]` | 대여소 마스터와 지정한 월의 대여이력을 `data/`로 다운로드 |
 | `load-stations.sh` | `sql/01-schema.sql` 적용, 대여소 적재, `geom` 생성 + GiST 인덱스 |
 | `load-trips.sh [월 …]` | CP949 CSV를 스테이징 후 타입 변환·인덱스 |
-| `stream-trips.sh` | 동일 포맷으로 지속 삽입 — `--rate`, `--interval`, `--batches` |
+| `backfill-trips.sh` | 적재된 이력과 어제 사이의 **빠진 날짜를 모두** 채움 |
+| `generate-trips.sh` | 지금 이 요일·이 시각에 맞는 속도로 계속 생성 |
+| `explain-pushdown.sh` | 쿼리가 원격에서 돌았는지 끌려왔는지 판정 |
 | `psql.sh` | 서비스에 psql 접속; 점검은 `-f /sql/02-verify.sql` |
+
+| 쿼리 세트 | |
+|---|---|
+| `sql/10-spatial-postgres.sql` | Postgres를 떠날 수 없는 공간 쿼리 5개 |
+| `sql/20-aggregate-pushdown.sql` | ClickHouse에서 돌아야 할 집계 5개 |
 
 ### 테이블
 
@@ -246,16 +294,53 @@ trips에서 stations로 가는 **외래키는 없습니다.** 이력에는 현�
 거부됩니다. 1월 이력의 대여소번호 17개가 마스터에 없고, 대여 26,346건이
 여기 해당합니다.
 
-### 스트리밍 삽입
+### 빠진 구간 채우기, 그리고 계속 채우기
 
-`stream-trips.sh`는 적재된 이력에서 실제 출발–도착 쌍을 표본으로 뽑아 현재
-시각으로 다시 넣습니다. 이 데이터의 OD 흐름은 편중이 심해서 — 한강 다리 근처와
-대학가 몇 곳이 큰 비중을 차지하고, 소요시간도 쌍에 따라갑니다 — 쌍을 균등하게
-지어내면 실제로는 나오지 않는 모양으로 집계됩니다. 새로 만드는 건 타임스탬프뿐
-입니다.
+질문이 달라서 스크립트를 둘로 나눴습니다.
 
-배치는 `--rate`보다 조금 적게 들어갑니다(중복 추출이 합쳐져서). 출력되는 수는
-요청한 수가 아니라 삽입이 반환한 실제 행 수입니다.
+`backfill-trips.sh`는 첫 적재일부터 어제까지 중 **행이 없는 날짜를 DB에 직접
+물어** 그 날짜만 씁니다. `max(started_at) + 1`을 시작점으로 잡는 편이 간단했지만
+틀렸습니다 — 스트리밍 시험이 오늘 날짜에 행을 넣어둔 탓에 2월부터 8월까지가
+"이미 채워짐"으로 판정됐습니다.
+
+```
+$ ./scripts/backfill-trips.sh --explain
+  weekday 60388 / weekend 37893 trips per day
+  days       : 195 missing, 2026-02-01 .. 2026-08-14
+  estimate   : 22,202,682 trips at scale 1.0
+  extrapolated months (no published data): [7, 8]
+```
+
+전체 물량은 2,200만 행이고 전부 하류로 복제되므로 실행 전에 확인을 받습니다.
+`--scale 0.1`이면 모양은 같고 크기는 1/10입니다.
+
+`generate-trips.sh`는 지금 이 요일·이 시각에 맞는 속도로 계속 돌립니다. 화요일
+오전 8시는 화요일 새벽 4시의 몇 배를 넣습니다. 창(window)마다 건수가 달라지는데,
+도착을 포아송에서 뽑기 때문입니다 — 고정 속도면 메트로놈처럼 똑같은 수만 나옵니다.
+
+**생성 방식.** 생성된 대여는 *실제 대여에 새 타임스탬프를 붙인 것*이며, 같은
+종류의 요일·같은 시각에 시작된 실제 대여 풀에서 뽑습니다. 여기서는 모든 필드가
+서로 얽혀 있습니다 — 아침 대여는 지하철역으로 8분, 일요일 오후는 강변으로 40분,
+연령대도 그에 따라 달라집니다. 컬럼별로 따로 뽑으면 히스토그램은 맞지만 결합
+구조가 사라져 OD 행렬이 균등해지고, 이 랩이 보여주려는 집계가 밋밋해집니다.
+
+실제 1월과 비교하면 생성 데이터가 잘 맞습니다.
+
+| | 실제(1월) | 생성 |
+|---|---|---|
+| 평일 08시 비중 | 28.16% | 28.20% |
+| 18시 비중 | 26.55% | 26.49% |
+| 평균 소요시간 | 17.1분 | 17.0분 |
+| 평균 거리 | 1,724 m | 1,718 m |
+| 왕복 비율 | 8.6% | 8.7% |
+
+**측정하지 않은 것**은 월별 규모입니다 — 1월만 적재돼 있어서요. 포털에 공개된
+월별 파일 크기를 대여 건수의 대리 지표로 썼고(2026-01~06: 280, 307, 501, 674,
+690, 716 MB), 7·8월은 아직 미공개라 6월에서 외삽했습니다. `--explain`이 추정
+구간을 표시합니다.
+
+한계 하나: *n*번째마다 뽑는 표본은 희소한 대여소를 놓쳐서, 생성한 한 주는 출발
+대여소 2,768개 중 2,541개만 담았습니다. 중요하면 `--sample`을 올리세요.
 
 ### 공간 쪽은 이런 모양
 
