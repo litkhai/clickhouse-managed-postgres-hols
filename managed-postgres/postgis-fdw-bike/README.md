@@ -230,6 +230,12 @@ script checks the filename in the response and refuses anything unexpected.
 
 The CSVs are CP949.
 
+### Further reading
+
+[WRITEUP.md](WRITEUP.md) — how the demo was built: why this dataset, what the
+platform provided, the UTC decision, how the synthetic trips are modelled, and
+the replication caveats. Written as source material for a longer article.
+
 ### 📄 License
 
 [MIT](../../LICENSE) — same as the rest of the repository. The data is not
@@ -435,6 +441,12 @@ SELECT application_name, state, replay_lag FROM pg_stat_replication;
 검사해 예상과 다르면 거부합니다.
 
 CSV 인코딩은 CP949입니다.
+
+### 더 읽을거리
+
+[WRITEUP.md](WRITEUP.md) — 이 데모를 만든 과정: 데이터 선정 이유, 플랫폼이 제공한 것,
+UTC 결정, 합성 대여의 모델링 방식, 복제 시 주의점. 긴 글의 소재로 쓸 수 있게
+정리했습니다.
 
 ### 📄 라이선스
 

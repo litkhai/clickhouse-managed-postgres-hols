@@ -22,15 +22,18 @@ reach the aggregating side.
 **Shape:**
 
 ```
-   PostGIS                  pg_clickhouse (FDW)              ClickHouse
-   ───────                  ───────────────────              ──────────
-   2,789 station points  ←  small aggregate comes back  ←    22M+ trips
-   Voronoi, KNN, DBSCAN,    joined locally on                GROUP BY runs here
-   ST_Distance, azimuth     station_id
+   PostGIS (local only)      pg_clickhouse (FDW)        ClickHouse
+   ────────────────────      ───────────────────        ──────────
+   geometry: geom            small result comes back ←  trips + stations
+   Voronoi, KNN, DBSCAN,                                GROUP BY *and* the
+   ST_Distance, azimuth                                 join both run here
 ```
 
-ClickPipes replicates `bike.trips` into ClickHouse continuously; the foreign
-table points back at it.
+ClickPipes replicates **both** `bike.trips` and `bike.stations`, and
+pg_clickhouse pushes down joins between tables on the same remote server — so
+naming a station is remote work too. What cannot move is the geometry: `geom`
+has no ClickHouse equivalent. What breaks pushdown is mixing in a *local*
+table.
 
 **Two things to show:**
 
@@ -63,7 +66,7 @@ ln -s ../provisioning/config.env config.env
 ./scripts/generate-trips.sh    # keep it live
 ```
 
-Full detail in [README.md](README.md).
+Full detail in [README.md](README.md); how it was built in [WRITEUP.md](WRITEUP.md).
 
 ---
 
@@ -86,15 +89,17 @@ bike.trips      월 164만 행               ← 무한히 늘고, 집계만 함
 **구조:**
 
 ```
-   PostGIS                  pg_clickhouse (FDW)         ClickHouse
-   ───────                  ───────────────────         ──────────
-   대여소 2,789개 포인트  ←  작은 집계 결과만 회수  ←   2,200만+ 대여
-   Voronoi, KNN, DBSCAN,     station_id 로                GROUP BY 는
-   ST_Distance, 방위각       로컬 조인                    여기서 실행
+   PostGIS (로컬 전용)       pg_clickhouse (FDW)      ClickHouse
+   ─────────────────────     ───────────────────      ──────────
+   지오메트리: geom          작은 결과만 회수    ←    trips + stations
+   Voronoi, KNN, DBSCAN,                              GROUP BY 도 조인도
+   ST_Distance, 방위각                                여기서 실행
 ```
 
-ClickPipes가 `bike.trips`를 ClickHouse로 계속 복제하고, 외래 테이블이 그것을
-가리킵니다.
+ClickPipes가 `bike.trips`와 `bike.stations`를 **둘 다** 복제하고,
+pg_clickhouse는 같은 원격 서버의 테이블끼리 조인도 푸시다운합니다 — 대여소
+이름을 붙이는 것도 원격 작업입니다. 옮길 수 없는 건 지오메트리입니다: `geom`에는
+ClickHouse 대응물이 없습니다. 푸시다운을 깨는 건 **로컬** 테이블을 섞는 것입니다.
 
 **보여줄 것 두 가지:**
 
@@ -125,4 +130,4 @@ ln -s ../provisioning/config.env config.env
 ./scripts/generate-trips.sh    # 계속 흘려보냄
 ```
 
-자세한 내용은 [README.md](README.md).
+자세한 내용은 [README.md](README.md), 만든 과정은 [WRITEUP.md](WRITEUP.md).
