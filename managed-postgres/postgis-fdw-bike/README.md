@@ -98,6 +98,9 @@ scans waits for **Run query**, because at 24M rows a daily rollup is 5 s and
 on a timer. Leaving `FOREIGN_SCHEMA` unset is fine; the page then says plainly
 that there is nothing to push down to, rather than reporting a failed pushdown.
 
+How it is built — the endpoints, how the verdict comes out of the plan tree,
+and why the SQL binds on the client — is in [ui/README.md](ui/README.md).
+
 ### Why this dataset
 
 Seoul's public bike history is one row per trip with a start and an end station,
@@ -373,6 +376,9 @@ open http://localhost:8080
 `count(DISTINCT started_at::date)`가 14초이기 때문입니다 — 측정값이고, 그래서
 타이머에 걸지 않았습니다. `FOREIGN_SCHEMA`를 비워 둬도 됩니다. 그러면 화면이
 푸시다운 실패라고 보고하는 대신 보낼 대상이 없다고 명확히 말합니다.
+
+어떻게 만들었는지 — 엔드포인트, 실행 계획 트리에서 판정을 끌어내는 방식, SQL을
+클라이언트에서 바인딩하는 이유 — 는 [ui/README.md](ui/README.md)에 있습니다.
 
 ### 왜 이 데이터인가
 
