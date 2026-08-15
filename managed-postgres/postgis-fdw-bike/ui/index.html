@@ -60,6 +60,9 @@ header .title span { color: var(--yellow); }
            background: var(--panel); }
 #filters.hide { display: none; }
 .f { display: flex; flex-direction: column; gap: 4px; }
+/* An explicit display beats the [hidden] default, so say it again. Without this
+   the custom date inputs stay on screen behind every preset. */
+.f[hidden] { display: none; }
 .f > label { font-size: 11px; color: var(--muted); text-transform: uppercase;
              letter-spacing: .04em; }
 .f input, .f select, .f button.combo {
@@ -254,8 +257,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 </header>
 
 <div id="filters">
-  <div class="f"><label data-i18n="f.from">From (KST)</label><input type="date" id="fFrom"></div>
-  <div class="f"><label data-i18n="f.to">To (KST)</label><input type="date" id="fTo"></div>
+  <div class="f"><label data-i18n="f.range">Range</label>
+    <select id="fRange">
+      <option value="1d">1d</option><option value="1w">1w</option>
+      <option value="1mo" selected>1mo</option><option value="3mo">3mo</option>
+      <option value="6mo">6mo</option><option value="1y">1y</option>
+      <option value="custom">custom</option>
+    </select></div>
+  <div class="f"><label data-i18n="f.bucket">Bucket</label><select id="fBucket"></select></div>
+  <div class="f" id="customFrom" hidden><label data-i18n="f.from">From (KST)</label><input type="date" id="fFrom"></div>
+  <div class="f" id="customTo" hidden><label data-i18n="f.to">To (KST)</label><input type="date" id="fTo"></div>
   <div class="f"><label data-i18n="f.district">District</label>
     <div class="combowrap">
       <button class="combo" id="fDistBtn" type="button" data-i18n="f.allDistricts">All districts</button>
@@ -343,15 +354,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   <div class="subnav"><span id="aggnav"></span>
     <span style="width:14px"></span>
     <label><span data-i18n="lbl.runAgainst">Run against</span> <span id="sideNav" style="display:inline-flex;gap:4px;margin-left:4px"></span></label>
-    <span style="width:14px"></span>
-    <label><span data-i18n="lbl.bucket">Bucket</span>
-      <select id="fBucket" style="font:inherit;font-size:12.5px;padding:4px 8px;border-radius:7px;border:1px solid var(--line);background:#17171c;color:var(--fg)">
-        <option value="hour">1h</option>
-        <option value="day" selected>24h</option>
-        <option value="week">1w</option>
-        <option value="month">1mo</option>
-        <option value="quarter">1q</option>
-      </select></label>
     <div class="spacer"></div>
     <span class="badge off" id="aggbadge">—</span></div>
   <div class="splitwrap">
@@ -460,15 +462,18 @@ const S = {
   'f.weekdays':      { ko: '평일',            en: 'Weekdays' },
   'f.weekends':      { ko: '주말',            en: 'Weekends' },
   'f.minTrips':      { ko: '그룹 최소 건수',   en: 'Min trips / group' },
-  'f.clear':         { ko: '해제 — 전체 자치구', en: 'Clear — all districts' },
+  'f.range':         { ko: '기간',            en: 'Range' },
+  'f.bucket':        { ko: '집계 단위',        en: 'Bucket' },
+  'f.custom':        { ko: '사용자 지정',      en: 'Custom' },
+  'f.clear':         { ko: '전체 해제',    en: 'Clear' },
 
   'btn.run':     { ko: '▶ 쿼리 실행', en: '▶ Run query' },
   'btn.table':   { ko: '표',          en: 'table' },
   'btn.chart':   { ko: '차트만',      en: 'chart only' },
   'btn.refresh': { ko: '새로고침',    en: 'Refresh' },
 
-  'run.dirty':   { ko: '필터가 바뀌었습니다 — 실행을 누르세요', en: 'filters changed — press Run' },
-  'run.loadTab': { ko: '실행을 눌러 이 탭을 불러오세요',        en: 'press Run to load this tab' },
+  'run.dirty':   { ko: '필터 변경됨 — 실행', en: 'filters changed — Run' },
+  'run.loadTab': { ko: '실행을 누르세요',  en: 'press Run' },
   'run.running': { ko: '실행 중…',   en: 'running…' },
   'run.failed':  { ko: '실패 — ',    en: 'failed — ' },
   'run.logged':  { ko: '개 쿼리 기록됨', en: ' queries logged' },
@@ -478,7 +483,7 @@ const S = {
 
   'ch.map':       { ko: '대여소 수요 — PostGIS',  en: 'Station demand — PostGIS' },
   'ch.districts': { ko: '자치구 순위',            en: 'Busiest districts' },
-  'ch.daily':     { ko: '일별 대여',              en: 'Trips per day' },
+  'ch.daily':     { ko: '기간별 대여',            en: 'Trips per bucket' },
   'ch.duration':  { ko: '이용 시간 (분)',         en: 'Trip length (minutes)' },
   'ch.hourly':    { ko: '시간대별',               en: 'Hour of day' },
   'lg.weekday':   { ko: '평일',                   en: 'Weekday' },
@@ -495,7 +500,7 @@ const S = {
   'tile.stations': { ko: '대여소',           en: 'Stations' },
   'tile.disk':     { ko: 'bike.trips 크기',  en: 'bike.trips on disk' },
   'tile.perMin':   { ko: ' /분',             en: ' /min' },
-  'tile.stationsSub': { ko: 'PostGIS 포인트, 25개 자치구', en: 'PostGIS points, 25 districts' },
+  'tile.stationsSub': { ko: 'PostGIS 포인트', en: 'PostGIS points' },
   'tile.newestAgo':   { ko: '전 최신 기록',  en: 'ago' },
 
   'kv.version':   { ko: '버전',              en: 'version' },
@@ -513,19 +518,19 @@ const S = {
   'kv.extension': { ko: '확장',              en: 'extension' },
   'kv.server':    { ko: 'foreign server',    en: 'foreign server' },
   'kv.ftables':   { ko: 'foreign table',     en: 'foreign tables' },
-  'kv.statsReads':{ ko: '통계 탭이 읽는 곳', en: 'Statistics reads' },
+  'kv.statsReads':{ ko: '통계 탭',        en: 'Statistics' },
   'kv.comparison':{ ko: '비교',              en: 'comparison' },
   'kv.schema':    { ko: '스키마',            en: 'schema' },
   'kv.features':  { ko: '그린 피처',         en: 'features drawn' },
   'kv.duration':  { ko: '소요 시간',         en: 'duration' },
-  'kv.widest':    { ko: '가장 넓은 플랜 노드', en: 'widest plan node' },
-  'kv.crossed':   { ko: '네트워크를 건넌 행', en: 'across the wire' },
+  'kv.widest':    { ko: '최대 노드',      en: 'widest node' },
+  'kv.crossed':   { ko: '건넌 행',        en: 'across wire' },
   'kv.rowsOut':   { ko: '반환 행',           en: 'rows returned' },
   'kv.filter':    { ko: '필터',              en: 'filter' },
   'kv.bucket':    { ko: '버킷',              en: 'bucket' },
   'kv.planNodes': { ko: '플랜 노드 수',      en: 'plan nodes' },
   'kv.rows':      { ko: '행',                en: 'rows' },
-  'kv.none':      { ko: '없음 — foreign scan 자체가 없음', en: 'none — no foreign scan' },
+  'kv.none':      { ko: '없음',           en: 'none' },
   'kv.available': { ko: '가능',              en: 'available' },
   'kv.unavailable': { ko: '불가',            en: 'unavailable' },
   'kv.missing':   { ko: '없음',              en: 'missing' },
@@ -534,44 +539,40 @@ const S = {
   'badge.connecting': { ko: '연결 중…',            en: 'connecting…' },
   'badge.geomLocal':  { ko: '지오메트리 · 항상 로컬', en: 'geometry · always local' },
   'badge.postgisLocal': { ko: 'PostGIS · 항상 로컬', en: 'PostGIS · always local' },
-  'badge.fdwReady':   { ko: 'FDW 준비됨 · foreign table ', en: 'FDW ready · foreign tables ' },
-  'badge.cdcNoFdw':   { ko: 'CDC 스트리밍 · FDW 없음',    en: 'CDC streaming · no FDW yet' },
-  'badge.ranOn':      { ko: '실행된 곳: ',        en: 'ran on: ' },
+  'badge.fdwReady':   { ko: 'FDW 연결됨',  en: 'FDW ready' },
+  'badge.cdcNoFdw':   { ko: 'FDW 없음',    en: 'No FDW' },
+  'badge.ranOn':      { ko: '',            en: '' },
 
   'lbl.runAgainst': { ko: '실행 대상',       en: 'Run against' },
   'lbl.bucket':     { ko: '집계 단위',       en: 'Bucket' },
-  'lbl.analyze':    { ko: 'EXPLAIN ANALYZE (실제 실행 — 추정치가 아닌 실측 행 수)',
-                      en: 'EXPLAIN ANALYZE (runs it — measured rows, not estimates)' },
+  'lbl.analyze':    { ko: 'EXPLAIN ANALYZE (실측)', en: 'EXPLAIN ANALYZE (measured)' },
   'lbl.auto':       { ko: '5초마다 자동',    en: 'auto every 5s' },
 
-  'sum.sql':    { ko: '실행된 SQL',                    en: 'SQL that ran' },
-  'sum.remote': { ko: 'Remote SQL — ClickHouse로 실제 전송된 것', en: 'Remote SQL — what was sent to ClickHouse' },
+  'sum.sql':    { ko: 'SQL',              en: 'SQL' },
+  'sum.remote': { ko: 'Remote SQL',       en: 'Remote SQL' },
   'sum.plan':   { ko: '실행 계획',                     en: 'Plan tree' },
-  'sum.planEst':{ ko: '실행 계획 (플래너 추정)',        en: 'Plan tree (planner estimates)' },
+  'sum.planEst':{ ko: '실행 계획 (추정)', en: 'Plan tree (estimates)' },
 
-  'ledger.title': { ko: '버킷별 반환 행 수', en: 'Bucket vs rows returned' },
-  'ledger.note':  { ko: '이번 세션에서 시도한 버킷들. 읽는 행은 매번 같고, 돌아오는 행 수만 달라집니다.',
-                    en: 'Every bucket you try this session. The same rows are read each time; only how many come back changes.' },
-  'ledger.pick':  { ko: '다른 버킷을 골라 비교해 보세요.', en: 'Pick another bucket to compare.' },
+  'ledger.title': { ko: '버킷별 반환 행',  en: 'Rows per bucket' },
+  'ledger.note':  { ko: '읽는 행은 같고 반환 행만 달라집니다.', en: 'Same rows read; fewer returned.' },
+  'ledger.pick':  { ko: '다른 버킷과 비교', en: 'Try another bucket' },
   'ledger.ranOn': { ko: '실행된 곳', en: 'ran on' },
 
-  'empty.run':     { ko: '실행을 누르세요',            en: 'press Run to load' },
-  'empty.compare': { ko: '실행을 눌러 양쪽을 비교하세요', en: 'press Run to compare the two sides' },
+  'empty.run':     { ko: '실행을 누르세요', en: 'press Run' },
+  'empty.compare': { ko: '실행을 누르세요', en: 'press Run' },
   'empty.noRows':  { ko: '이 필터에는 해당 행이 없습니다', en: 'no rows for this filter' },
   'empty.nothing': { ko: '아직 없습니다',              en: 'nothing yet' },
   'empty.noWindow':{ ko: '이 구간에는 데이터가 없습니다', en: 'no rows in this window' },
-  'empty.webgl':   { ko: 'WebGL을 쓸 수 없어 지도를 그릴 수 없습니다. 나머지 기능은 정상 동작합니다.',
-                     en: 'WebGL is unavailable, so the map cannot draw. Everything else on the page still works.' },
+  'empty.webgl':   { ko: 'WebGL 없음 — 지도를 그릴 수 없습니다', en: 'WebGL unavailable — no map' },
 
-  'log.hint':      { ko: '행을 클릭하면 SQL·Remote SQL·실행 계획이 펼쳐집니다',
-                     en: 'click a row for its SQL, remote SQL and plan' },
+  'log.hint':      { ko: '행 클릭 시 상세', en: 'click a row for detail' },
   'log.total':     { ko: '이번 세션 쿼리',      en: 'Queries this session' },
   'log.aggs':      { ko: '집계 쿼리',           en: 'Aggregates' },
   'log.pushed':    { ko: 'ClickHouse로 내려간 것', en: 'Pushed to ClickHouse' },
   'log.local':     { ko: 'Postgres가 센 것',    en: 'Counted in Postgres' },
   'log.msPg':      { ko: 'Postgres 소요',       en: 'Time on Postgres' },
   'log.msCh':      { ko: 'ClickHouse 소요',     en: 'Time on ClickHouse' },
-  'log.crossed':   { ko: '건너온 행 합계',      en: 'Rows across the wire' },
+  'log.crossed':   { ko: '건넌 행',        en: 'Rows across wire' },
   'log.c.n':       { ko: '#',            en: '#' },
   'log.c.time':    { ko: '시각',         en: 'time' },
   'log.c.kind':    { ko: '종류',         en: 'kind' },
@@ -603,53 +604,47 @@ const S = {
 
 /** The five things a plan can be, worded rather than inferred from a string. */
 const VERDICT = {
-  pushed:   { ko: 'Remote SQL이 집계를 담고 있습니다 — ClickHouse가 셌습니다',
-              en: 'the remote SQL carries the aggregation — ClickHouse did the counting' },
-  partial:  { ko: '원격에서 집계한 뒤 여기서 다시 집계했습니다',
-              en: 'aggregated remotely, then re-aggregated here' },
-  dragged:  { ko: 'foreign scan이 컬럼만 가져왔습니다 — 모든 행이 네트워크를 건너와 여기서 세어졌습니다',
-              en: 'the foreign scan selects columns only — every row crossed the network to be counted here' },
-  local:    { ko: '이 계획에는 foreign table이 없습니다 — 로컬 Postgres 테이블을 읽었습니다',
-              en: 'no foreign table in this plan — it read local Postgres tables' },
-  no_fdw:   { ko: 'foreign table이 설정되어 있지 않아 내려보낼 대상이 없습니다',
-              en: 'no foreign tables are configured, so there is nothing to push down' },
-  series:   { ko: '대시보드 차트 — 로컬 스캔, 푸시다운 대상이 아닙니다',
-              en: 'dashboard chart — local scan, never pushed down' },
-  geometry: { ko: 'PostGIS 지오메트리 — 원격에 대응물이 없습니다',
-              en: 'PostGIS geometry — there is no remote form of this' },
+  pushed:   { ko: '집계가 Remote SQL에 포함됨', en: 'aggregation is in the remote SQL' },
+  partial:  { ko: '원격 집계 후 로컬 재집계',   en: 'aggregated remotely, re-aggregated here' },
+  dragged:  { ko: 'foreign scan이 컬럼만 반환 — 모든 행이 네트워크를 건넘',
+              en: 'foreign scan returns columns — every row crossed the network' },
+  local:    { ko: 'foreign table 없이 로컬 테이블을 읽음',
+              en: 'read local tables; no foreign table in the plan' },
+  no_fdw:   { ko: 'foreign table 미설정',       en: 'no foreign tables configured' },
+  series:   { ko: '로컬 스캔',                  en: 'local scan' },
+  geometry: { ko: 'PostGIS 지오메트리 — 원격 불가', en: 'PostGIS geometry — no remote form' },
 };
 const verdictText = ran => tv(VERDICT[ran.verdict]) || ran.detail;
 
 const QLABEL = {
-  stations: { ko: '대여소',        en: 'Stations' },
-  voronoi:  { ko: '세력권',        en: 'Service areas' },
-  flows:    { ko: '이동 흐름',     en: 'Flows' },
-  pressure: { ko: '재배치 압력',   en: 'Rebalancing' },
-  character:{ ko: '출퇴근이냐 여가냐', en: 'Commuter or leisure' },
-  corridors:{ ko: '주요 통행축',   en: 'Heaviest corridors' },
-  districts:{ ko: '자치구별',      en: 'By district' },
-  hourly:   { ko: '시간대별',      en: 'Hour of day' },
-  timeseries:{ ko: '시간 흐름',    en: 'Over time' },
+  stations: { ko: '대여소',     en: 'Stations' },
+  voronoi:  { ko: '세력권',     en: 'Service areas' },
+  flows:    { ko: '흐름',       en: 'Flows' },
+  pressure: { ko: '재배치',     en: 'Rebalancing' },
+  character:{ ko: '출퇴근/여가', en: 'Commute vs leisure' },
+  corridors:{ ko: '통행축',     en: 'Corridors' },
+  districts:{ ko: '자치구별',   en: 'By district' },
+  hourly:   { ko: '시간대별',   en: 'Hour of day' },
+  timeseries:{ ko: '기간별',    en: 'Over time' },
 };
 const QNOTE = {
-  stations: { ko: '필터 구간의 출발 건수로 크기를 정한 포인트. 대여 건수와의 조인은 정수 id로 하므로 지오메트리는 Postgres를 떠나지 않습니다.',
-              en: 'Points sized by departures in the filtered window. The join to the trip count is by integer id — geometry never leaves Postgres.' },
-  voronoi:  { ko: '전체 대여소에 대한 ST_VoronoiPolygons를 네트워크 외곽선으로 자른 것. ClickHouse에는 대응물이 없습니다.',
-              en: 'ST_VoronoiPolygons over every station, clipped to the network hull. There is no ClickHouse equivalent of this.' },
-  flows:    { ko: '가장 무거운 출발–도착 쌍을 선으로. 세는 일은 옮길 수 있지만 ST_MakeLine은 옮길 수 없습니다.',
-              en: 'The heaviest origin–destination pairs drawn as lines. The counting can move; ST_MakeLine cannot.' },
-  pressure: { ko: '대여소별 도착 빼기 출발. 빨강은 자전거가 빠져나가 채워 넣어야 하는 곳, 파랑은 쌓이는 곳입니다.',
-              en: 'Arrivals minus departures per station. Red drains and needs bikes brought in; blue fills up.' },
-  character:{ ko: '대여소별 피크 시간 비중과 주말 비중. 조건부 합 두 개와 카운트 하나 — 컬럼 스토어가 못 할 일이 아닙니다.',
-              en: 'Peak share against weekend share, per station. Two conditional sums and a count — nothing a column store cannot do.' },
-  corridors:{ ko: '출발–도착 쌍. stations를 두 번 조인하는데 셋 다 원격이므로 조인 전체가 옮겨갑니다.',
-              en: 'Origin–destination pairs. Joins two copies of stations to trips; all three are remote, so the whole join can move.' },
-  districts:{ ko: '수백만 행에서 25개 그룹으로 — 돌아오는 게 거의 없으니 푸시다운에 가장 유리한 경우입니다.',
-              en: 'Twenty-five groups out of millions of rows — the best possible case for pushing down, because almost nothing comes back.' },
-  hourly:   { ko: '24개 그룹. 구간의 모든 행을 읽고 시간당 한 줄을 돌려줍니다.',
-              en: 'Twenty-four groups. Reads every row in the window and returns one line per hour.' },
-  timeseries:{ ko: '버킷당 한 줄이고, 버킷은 직접 고릅니다. 굵은 버킷도 읽는 행은 똑같지만 돌아오는 행은 훨씬 적습니다 — 롤업의 값싼 절반이고, 컬럼 스토어가 시키지 않아도 하는 일입니다.',
-              en: 'One row per bucket, and the bucket is yours to pick. Coarser buckets read exactly the same rows but return far fewer — which is the cheap half of a rollup.' },
+  stations: { ko: '출발 건수로 크기 조정. 조인 키는 정수 id.',
+              en: 'Sized by departures. Joined on integer id.' },
+  voronoi:  { ko: 'ST_VoronoiPolygons, 네트워크 외곽선으로 클리핑.',
+              en: 'ST_VoronoiPolygons, clipped to the hull.' },
+  flows:    { ko: '상위 출발–도착 쌍. ST_MakeLine은 옮길 수 없음.',
+              en: 'Top OD pairs. ST_MakeLine cannot move.' },
+  pressure: { ko: '도착 − 출발. 빨강은 유출, 파랑은 유입.',
+              en: 'Arrivals − departures. Red drains, blue fills.' },
+  character:{ ko: '대여소별 피크·주말 비중.',
+              en: 'Peak and weekend share per station.' },
+  corridors:{ ko: '출발–도착 쌍. stations를 두 번 조인.',
+              en: 'OD pairs. Joins stations twice.' },
+  districts:{ ko: '25개 그룹. 푸시다운에 가장 유리.',
+              en: '25 groups. Best case for pushdown.' },
+  hourly:   { ko: '24개 그룹.', en: '24 groups.' },
+  timeseries:{ ko: '버킷당 한 줄. 굵을수록 반환 행만 줄어듦.',
+               en: 'One row per bucket.' },
 };
 
 const BUCKET_LABEL = {
@@ -1060,6 +1055,61 @@ function markClean(text) {
   $('#runState').textContent = text || '';
 }
 
+/* Ranges are counted back from the newest trip, not from today: the data ends
+   where the generator last wrote, and "1 week" meaning a week of empty days
+   would be a worse default than a week of rows. */
+const RANGES = {
+  '1d':  { days: 1,   ko: '1일',    en: '1 day' },
+  '1w':  { days: 7,   ko: '1주',    en: '1 week' },
+  '1mo': { days: 30,  ko: '1개월',  en: '1 month' },
+  '3mo': { days: 91,  ko: '3개월',  en: '3 months' },
+  '6mo': { days: 182, ko: '6개월',  en: '6 months' },
+  '1y':  { days: 365, ko: '1년',    en: '1 year' },
+};
+const BUCKET_DAYS = { hour: 1 / 24, day: 1, week: 7, month: 30, quarter: 91 };
+
+/** A bucket has to divide the range into something worth plotting: at least two
+    points, and not so many that the chart is a solid block. Offering "1 quarter"
+    over a single day produces one bar, which is not a chart. */
+function validBuckets(spanDays) {
+  const ok = Object.keys(BUCKET_DAYS).filter(b => {
+    const n = spanDays / BUCKET_DAYS[b];
+    return n >= 2 && n <= 800;
+  });
+  return ok.length ? ok : ['day'];
+}
+
+function spanDays() {
+  const a = new Date($('#fFrom').value), b = new Date($('#fTo').value);
+  if (isNaN(a) || isNaN(b)) return 30;
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
+function syncBuckets() {
+  const sel = $('#fBucket'), want = sel.value;
+  const ok = validBuckets(spanDays());
+  sel.innerHTML = ok.map(b =>
+    `<option value="${b}">${esc(tv(BUCKET_LABEL[b]))}</option>`).join('');
+  // Keep the reader's choice when it still fits; otherwise take the finest that
+  // does, which is the one that shows the most without being unreadable.
+  sel.value = ok.includes(want) ? want : ok[0];
+}
+
+function applyRange(key) {
+  const custom = key === 'custom';
+  $('#customFrom').hidden = !custom;
+  $('#customTo').hidden = !custom;
+  if (!custom) {
+    const end = new Date(CAT.bounds.newest + 'T00:00:00Z');
+    const start = new Date(end.getTime() - (RANGES[key].days - 1) * 86400000);
+    const iso = d => d.toISOString().slice(0, 10);
+    const floor = CAT.bounds.oldest;
+    $('#fTo').value = CAT.bounds.newest;
+    $('#fFrom').value = iso(start) < floor ? floor : iso(start);
+  }
+  syncBuckets();
+}
+
 function buildFilters() {
   const hf = $('#fHourFrom'), ht = $('#fHourTo');
   for (let i = 0; i < 24; i++) {
@@ -1067,9 +1117,14 @@ function buildFilters() {
     ht.add(new Option(String(i).padStart(2, '0'), i));
   }
   hf.value = 0; ht.value = 23;
-  $('#fFrom').value = CAT.defaults.from; $('#fTo').value = CAT.defaults.to;
   $('#fFrom').min = $('#fTo').min = CAT.bounds.oldest;
   $('#fFrom').max = $('#fTo').max = CAT.bounds.newest;
+  $('#fRange').innerHTML = Object.entries(RANGES).map(([k, r]) =>
+    `<option value="${k}"${k === '1mo' ? ' selected' : ''}>${esc(tv(r))}</option>`).join('') +
+    `<option value="custom">${esc(t('f.custom'))}</option>`;
+  applyRange('1mo');
+  $('#fRange').addEventListener('change', () => { applyRange($('#fRange').value); markDirty(); });
+  $('#fBucket').addEventListener('change', () => markDirty());
 
   const list = $('#fDistList');
   // No "select all" button: selecting every district and selecting none produce
@@ -1099,7 +1154,12 @@ function buildFilters() {
   document.addEventListener('click', () => list.classList.remove('open'));
   list.addEventListener('click', e => e.stopPropagation());
 
-  ['#fFrom', '#fTo', '#fHourFrom', '#fHourTo', '#fDaytype', '#fMin']
+  ['#fFrom', '#fTo'].forEach(s => $(s).addEventListener('change', () => {
+    $('#fRange').value = 'custom';
+    $('#customFrom').hidden = $('#customTo').hidden = false;
+    syncBuckets(); markDirty();
+  }));
+  ['#fHourFrom', '#fHourTo', '#fDaytype', '#fMin']
     .forEach(s => $(s).addEventListener('change', () => markDirty()));
   $('#runBtn').addEventListener('click', run);
 }
@@ -1210,7 +1270,7 @@ async function loadPulse() {
   ]);
 
   const b = $('#topbadge');
-  if (d.fdw.ready) { b.className = 'badge ch'; b.innerHTML = `<i class="dot"></i>${t('badge.fdwReady')}${d.fdw.foreign_tables}`; }
+  if (d.fdw.ready) { b.className = 'badge ch'; b.innerHTML = `<i class="dot"></i>${t('badge.fdwReady')}`; }
   else if (cdcOk) { b.className = 'badge pg'; b.innerHTML = `<i class="dot"></i>${t('badge.cdcNoFdw')}`; }
   else { b.className = 'badge off'; b.innerHTML = '<i class="dot"></i>CDC ' + esc(d.cdc.state); }
 }
@@ -1557,26 +1617,15 @@ async function loadPushdown(key) {
   wireStrip(d.fdw);
 
   const B = LANG === 'ko' ? {
-    noFdw: `<div class="banner"><b>아직 내려보낼 곳이 없습니다 — foreign table이 하나도 없습니다.</b>
-      ClickPipes가 ClickHouse <em>로</em> 복제하는 것과, Postgres가 거기서 <em>다시 읽는</em> 것은 별개입니다.
-      후자는 이쪽에 <code>pg_clickhouse</code> foreign table이 있어야 합니다. 그전까지 아래 쿼리는 전부 로컬
-      Postgres에서 돌고, "Postgres"라는 배지는 "푸시다운이 실패했다"가 아니라 "보낼 데가 없었다"는 뜻입니다.
-      <code>sql/40-fdw-clickhouse.sql</code>을 실행하고 <code>FOREIGN_SCHEMA=ch</code>를 주세요.</div>`,
-    noSchema: (sc) => `<div class="banner"><b>foreign table은 있는데 이 페이지가 위치를 모릅니다.</b>
-      <code>FOREIGN_SCHEMA</code>를 해당 스키마(${sc})로 지정하면 비교가 켜집니다.</div>`,
-    stayed: `<div class="banner"><b>집계가 Postgres에 남았습니다.</b>
-      foreign scan이 결과가 아니라 컬럼을 가져왔습니다 — 어느 노드가 셌는지 실행 계획에서 확인하세요.</div>`,
+    noFdw: `<div class="banner"><b>foreign table 없음.</b> ClickPipes 복제는 반대 방향입니다.
+      <code>sql/40-fdw-clickhouse.sql</code> 실행 후 <code>FOREIGN_SCHEMA=ch</code>.</div>`,
+    noSchema: (sc) => `<div class="banner"><b>FOREIGN_SCHEMA 미설정.</b> foreign table은 ${sc}에 있습니다.</div>`,
+    stayed: `<div class="banner"><b>집계가 Postgres에 남았습니다.</b> 실행 계획에서 어느 노드가 셌는지 확인하세요.</div>`,
   } : {
-    noFdw: `<div class="banner"><b>Nothing can push down yet — there are no foreign tables.</b>
-      ClickPipes replicating <em>into</em> ClickHouse does not let Postgres read back out of it; that needs
-      <code>pg_clickhouse</code> foreign tables on this side. Until they exist, every query below runs on local
-      Postgres, and a badge saying "Postgres" means "there was nowhere else to send it" — not "pushdown failed".
+    noFdw: `<div class="banner"><b>No foreign tables.</b> ClickPipes replicates the other way.
       Run <code>sql/40-fdw-clickhouse.sql</code>, then set <code>FOREIGN_SCHEMA=ch</code>.</div>`,
-    noSchema: (sc) => `<div class="banner"><b>Foreign tables exist, but this page has not been told where.</b>
-      Set <code>FOREIGN_SCHEMA</code> to the schema holding them (${sc}) to switch the comparison on.</div>`,
-    stayed: `<div class="banner"><b>The aggregation stayed in Postgres.</b>
-      The foreign scan came back with columns rather than a result — look at the plan tree to see which node
-      did the counting.</div>`,
+    noSchema: (sc) => `<div class="banner"><b>FOREIGN_SCHEMA is not set.</b> The foreign tables are in ${sc}.</div>`,
+    stayed: `<div class="banner"><b>The aggregation stayed in Postgres.</b> Check the plan tree for the node that counted.</div>`,
   };
 
   const local = d.sides.find(s => s.side === 'local');
@@ -1587,24 +1636,15 @@ async function loadPushdown(key) {
     $('#pushBanner').innerHTML = B.noSchema(esc(d.fdw.foreign_schemas));
   } else if (remote && remote.ran && remote.ran.where === 'clickhouse') {
     const speed = (local && local.ms && remote.ms) ? (local.ms / remote.ms) : null;
-    const answer = fmt(local && local.rows != null ? local.rows : (remote.rows ?? 0));
     const widest = compact(local && local.ran ? local.ran.rows_widest : 0);
-    const measured = remote.ran.rows_crossed_measured;
+    const nodes = local && local.ran ? local.ran.nodes.length : 0;
     $('#pushBanner').innerHTML = LANG === 'ko'
-      ? `<div class="banner good"><b>조인과 집계가 둘 다 ClickHouse로 갔습니다.</b>
-         원격 계획은 Foreign Scan 하나입니다 — ${measured
-           ? `${fmt(remote.ran.rows_crossed)}행이 네트워크를 건넜습니다`
-           : '완성된 결과만 건너왔습니다'}.
-         로컬 계획은 같은 ${answer}행을 얻으려고 ${widest}행을 조인과 정렬에 통과시켰고${
-           speed ? `, ${speed.toFixed(1)}배의 시간이 걸렸습니다` : ''}.
-         ${measured ? '' : 'EXPLAIN ANALYZE를 켜기 전까지 행 수는 플래너 추정치입니다.'}</div>`
-      : `<div class="banner good"><b>The join and the aggregation were both sent to ClickHouse.</b>
-         The remote plan is a single Foreign Scan — ${measured
-           ? `${fmt(remote.ran.rows_crossed)} rows crossed the wire`
-           : 'only the finished result crossed the wire'}. The local plan reached the same
-         ${answer} rows by putting ${widest} through a join and a sort${
-           speed ? `, taking ${speed.toFixed(1)}× as long` : ''}.
-         ${measured ? '' : 'Row counts here are planner estimates until you tick EXPLAIN ANALYZE.'}</div>`;
+      ? `<div class="banner good"><b>조인과 집계가 ClickHouse로 갔습니다.</b>
+         원격은 Foreign Scan 1개, 로컬은 노드 ${nodes}개에 ${widest}행 통과${
+           speed ? ` · ${speed.toFixed(1)}배` : ''}.</div>`
+      : `<div class="banner good"><b>Join and aggregation both went to ClickHouse.</b>
+         One Foreign Scan remotely; ${nodes} nodes and ${widest} rows locally${
+           speed ? ` · ${speed.toFixed(1)}×` : ''}.</div>`;
   } else {
     $('#pushBanner').innerHTML = B.stayed;
   }
@@ -1612,12 +1652,10 @@ async function loadPushdown(key) {
   if (!d.analyzed)
     $('#pushSides').insertAdjacentHTML('beforeend',
       LANG === 'ko'
-        ? `<p class="meta" style="grid-column:1/-1">행 수는 플래너 추정치입니다. 위의
-           <b>EXPLAIN ANALYZE</b>를 켜면 쿼리를 실측하며 실행해 실제로 건너온 행 수를 얻습니다 —
-           실행이 한 번 더 들기 때문에 기본값이 아닙니다.</p>`
-        : `<p class="meta" style="grid-column:1/-1">Row counts are planner estimates. Tick
-           <b>EXPLAIN ANALYZE</b> above to run the query under measurement and get the number of rows that
-           really crossed — it costs one extra execution, which is why it is not the default.</p>`);
+        ? `<p class="meta" style="grid-column:1/-1">행 수는 추정치입니다. 실측하려면 위의
+           <b>EXPLAIN ANALYZE</b>를 켜세요 (실행 1회 추가).</p>`
+        : `<p class="meta" style="grid-column:1/-1">Row counts are estimates. Tick
+           <b>EXPLAIN ANALYZE</b> for measured ones (one extra execution).</p>`);
   markClean(describeFilter(d.describe));
 }
 
@@ -1739,7 +1777,10 @@ $$('.tbtn').forEach(b => b.addEventListener('click', () => {
     loaded.push = true; guarded(() => loadPushdown(b.dataset.key));
   }));
   $('#fBucket').addEventListener('change', () => {
-    loaded.stats = true; guarded(() => loadAgg(activeAgg));
+    // Comparing buckets is the point of the Statistics ledger, so there it runs
+    // straight away; on the other tabs it is one filter among several and waits
+    // for Run like the rest of them.
+    if (activeTab === 'stats') { loaded.stats = true; guarded(() => loadAgg(activeAgg)); }
   });
   $('#pushAnalyze').addEventListener('change', () => {
     if (loaded.push) guarded(() => loadPushdown(activePush));

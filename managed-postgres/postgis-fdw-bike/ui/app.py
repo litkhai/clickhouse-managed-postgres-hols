@@ -637,9 +637,9 @@ GROUP BY 1 ORDER BY 1"""
 # benefit from running somewhere else.
 SERIES = {
     "daily": {
-        "label": "Trips per day",
+        "label": "Trips per bucket",
         "sql": f"""
-SELECT to_char((t.started_at + {KST})::date, 'YYYY-MM-DD') AS label,
+SELECT to_char(date_trunc('{{bucket}}', t.started_at + {KST}), '{{fmt}}') AS label,
        count(*) AS value
 FROM {LOCAL_SCHEMA}.trips t JOIN {LOCAL_SCHEMA}.stations s
   ON s.station_id = t.start_station_id
@@ -687,6 +687,9 @@ ORDER BY width_bucket(t.duration_min, 0, 120, 8)"""},
 # same 20-second rollup twice. Keyed by the filter, because a different filter
 # is a different question.
 CACHE, CACHE_LOCK, CACHE_TTL = {}, threading.Lock(), 120.0
+
+BUCKET_FMT = {"hour": "MM-DD HH24:MI", "day": "YYYY-MM-DD", "week": "YYYY-MM-DD",
+              "month": "YYYY-MM", "quarter": "YYYY-\"Q\"Q"}
 
 
 def cached(key, produce):
@@ -834,7 +837,10 @@ class Handler(BaseHTTPRequestHandler):
                 for name, spec in SERIES.items():
                     params = []
                     where, params = f.where("t", "s", params)
-                    sql = cur.mogrify(spec["sql"].replace("{where}", where), params)
+                    text = (spec["sql"].replace("{where}", where)
+                            .replace("{bucket}", f.bucket)
+                            .replace("{fmt}", BUCKET_FMT[f.bucket]))
+                    sql = cur.mogrify(text, params)
                     t0 = time.perf_counter()
                     cur.execute(sql)
                     cols = [c.name for c in cur.description]
