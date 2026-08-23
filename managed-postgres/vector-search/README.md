@@ -249,6 +249,15 @@ decimal string. Same data, thirteen minutes instead of thirty-nine seconds.
 - **`vchord_bm25`.** The dataset carries the article text, so lexical + vector hybrid search is one index away — and it has a counterpart to be measured against in [`usecase/fulltext-search`](../../usecase/fulltext-search/).
 - **Where the vectors should live.** If the embeddings only ever get searched and never updated, the argument that moved aggregation to ClickHouse in the [bike lab](../postgis-fdw-bike/) applies here too. That is the question worth ending on.
 
+### Further reading
+
+[WRITEUP.md](WRITEUP.md) — how the comparison was built, in the order it
+happened, with the wrong turns left in: why the premise changed before any
+measurement, the two format traps in the ingestion path, how a cold cache and
+a clever index-hiding trick each produced numbers that looked like data, and
+what a laptop could not have told us. Written as source material for a longer
+article.
+
 ### 📄 License
 
 [MIT](../../LICENSE) — same as the rest of the repository. The dbpedia
@@ -494,6 +503,13 @@ Parquet→텍스트 파이프라인→`COPY`는 예행연습에서 **분당 약 
 - **100만 행 전체.** 여기 있는 것은 방법론이고, 흥미로운 수치는 6 GB 작업집합이 편하게 들어가지 않게 되는 100만 행에서 나옵니다.
 - **`vchord_bm25`.** 데이터에 본문 텍스트가 함께 있어서 어휘+벡터 하이브리드 검색이 인덱스 하나 거리이고, [`usecase/fulltext-search`](../../usecase/fulltext-search/)라는 비교 대상도 이미 있습니다.
 - **벡터가 어디에 있어야 하는가.** 임베딩이 검색만 되고 갱신되지 않는다면, [자전거 랩](../postgis-fdw-bike/)에서 집계를 ClickHouse로 옮긴 논리가 여기에도 적용됩니다. 마지막에 던질 만한 질문입니다.
+
+### 더 읽을거리
+
+[WRITEUP.md](WRITEUP.md) — 이 비교를 만든 과정을 일어난 순서대로, 잘못 든 길을
+남긴 채 정리했습니다. 측정 전에 전제가 바뀐 이유, 적재 경로의 형식 함정 둘, 차가운
+캐시와 영리한 인덱스 숨기기가 각각 어떻게 데이터처럼 보이는 수치를 만들어냈는지,
+그리고 노트북으로는 알 수 없었던 것. 긴 글의 소재로 쓸 수 있게 정리했습니다.
 
 ### 📄 라이선스
 
