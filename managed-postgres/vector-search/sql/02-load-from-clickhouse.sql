@@ -52,15 +52,19 @@ IMPORT FOREIGN SCHEMA :"ch_db"
 -- Copy across
 -- --------------------------------------------------------------------------
 --
--- ClickHouse hands back Array(Float32); pgvector wants its own `vector` type.
--- Postgres will not cast an array straight to it, so the array goes through
--- its text form. Ugly, and still an order of magnitude quicker than the
--- Parquet-to-COPY route because only one hop is text rather than three.
+-- ClickHouse hands back Array(Float32), which pg_clickhouse surfaces as a
+-- Postgres array. pgvector's input parser wants square brackets:
+--
+--   ERROR: invalid input syntax for type vector: "{-0.0018529714,0.0224…}"
+--   DETAIL: Vector contents must start with "[".
+--
+-- So the braces get translated. There is no direct array-to-vector cast in
+-- pgvector 0.8.x, and this is the shortest correct bridge.
 
 \timing on
 
 INSERT INTO vec.dbpedia (id, title, body, embedding)
-SELECT id, title, body, embedding::text::vector(1536)
+SELECT id, title, body, translate(embedding::text, '{}', '[]')::vector(1536)
 FROM vec_ch.dbpedia
 ON CONFLICT (id) DO NOTHING;
 
@@ -89,4 +93,5 @@ FROM vec.dbpedia;
 
 \echo ''
 \echo '-- Note the split. The heap is small; the vectors are all in TOAST.'
-\echo '-- Measured on 31,000 rows: 14 MB heap against 261 MB total.'
+\echo '-- Measured on a real service at 38,462 rows: 16 MB heap, 322 MB total,'
+\echo '-- and the FDW moved all of it in 38.9 s.'

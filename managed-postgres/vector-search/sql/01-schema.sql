@@ -7,7 +7,25 @@
 -- fighting it for control.
 
 CREATE EXTENSION IF NOT EXISTS vector;          -- pgvector: hnsw, ivfflat
-CREATE EXTENSION IF NOT EXISTS vchord CASCADE;  -- VectorChord: vchordrq
+
+-- VectorChord needs to be in shared_preload_libraries, and on ClickHouse
+-- Managed Postgres it is not:
+--
+--   ERROR: vchord must be loaded via shared_preload_libraries.
+--
+-- You cannot fix that yourself either — ALTER SYSTEM is refused on the
+-- service. Being listed in the extension catalogue is not the same as being
+-- usable. So this is attempted and survives failing; sql/12-vectorchord.sql
+-- then has nothing to build on, which is the honest outcome rather than a
+-- broken lab.
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+    RAISE NOTICE 'vchord installed — sql/12-vectorchord.sql will run';
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'vchord unavailable (%) — skip sql/12-vectorchord.sql', SQLERRM;
+END
+$$;
 
 CREATE SCHEMA IF NOT EXISTS vec;
 

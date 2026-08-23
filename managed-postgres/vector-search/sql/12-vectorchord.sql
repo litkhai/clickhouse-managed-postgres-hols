@@ -2,11 +2,22 @@
 --
 --   ./scripts/psql.sh -f /sql/12-vectorchord.sql
 --
--- Managed Postgres ships this alongside pgvector, which is the interesting
--- part: the platform includes two vector engines rather than one. VectorChord
--- is IVF with RaBitQ quantisation — cells like IVFFlat, but the candidates
--- inside each cell are scored against compressed codes and only the survivors
--- are re-ranked against the full vectors.
+-- !! This does not run on ClickHouse Managed Postgres today. !!
+--
+-- vchord is in the extension catalogue but not in shared_preload_libraries,
+-- and ALTER SYSTEM is refused on the service, so CREATE EXTENSION fails and
+-- the access method never exists:
+--
+--   ERROR: vchord must be loaded via shared_preload_libraries.
+--   ERROR: access method "vchordrq" does not exist
+--
+-- The file is kept because the blocker is a config line rather than a missing
+-- package, and it works on a container that preloads it — see
+-- scripts/local-postgres.sh. Rerun it here when the service preloads vchord.
+--
+-- VectorChord is IVF with RaBitQ quantisation: cells like IVFFlat, but the
+-- candidates inside each cell are scored against compressed codes and only the
+-- survivors are re-ranked against the full vectors.
 
 \timing on
 

@@ -44,7 +44,7 @@ SET ivfflat.probes = 30;
 SELECT 'ivfflat probes=30' AS method, vec.recall_at_10() AS recall, vec.sweep() AS ms_per_query;
 
 \echo ''
-\echo '-- Measured at 31,000 rows: probes=1 gave recall 0.715 at 1.53 ms,'
-\echo '-- probes=10 gave 0.965 at 3.77 ms, probes=30 gave 0.990 at 8.55 ms.'
-\echo '-- Compare probes=10 against vchordrq probes=10: identical recall,'
-\echo '-- twenty times the latency. That is the row that matters.'
+\echo '-- Measured on a real service at 38,462 rows: probes=1 gave 0.700 at'
+\echo '-- 1.05 ms, probes=10 gave 0.975 at 7.33 ms, probes=30 gave 0.995 at'
+\echo '-- 21.44 ms. HNSW reached the same 0.975 in 1.45 ms — five times faster,'
+\echo '-- for six times the build. That is the trade, and it is the whole point.'
