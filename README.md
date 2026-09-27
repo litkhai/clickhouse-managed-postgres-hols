@@ -32,6 +32,8 @@ Hands-on labs for ClickHouse Managed Postgres and the `pg_clickhouse` extension:
 
 ### ✅ Repository checks
 
+Current state and what still needs a re-run: [STATUS.md](STATUS.md).
+
 ```bash
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
@@ -73,6 +75,8 @@ ClickHouse Managed Postgres와 `pg_clickhouse` 확장 실습 모음입니다. �
 | [litkhai/clickhouse-hols — `local/pg-analytics`](https://github.com/litkhai/clickhouse-hols/tree/main/local/pg-analytics) | 자체 호스팅 pg_lake / pg_duckdb / pg_clickhouse 벤치마크 (코어 레포에 남음) |
 
 ### ✅ 저장소 검사
+
+현재 상태와 재실행이 필요한 항목: [STATUS.md](STATUS.md).
 
 ```bash
 git config core.hooksPath .githooks
