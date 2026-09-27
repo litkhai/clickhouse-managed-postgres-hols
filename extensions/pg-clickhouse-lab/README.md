@@ -32,7 +32,7 @@ A self-contained, Docker-only lab that demonstrates the official **`pg_clickhous
 ### 🚀 Quick Start
 
 ```bash
-cd local/pg-clickhouse-lab
+cd extensions/pg-clickhouse-lab
 ./00-setup.sh
 
 # Walk through the lab
@@ -263,7 +263,7 @@ For questions or issues, see the main [clickhouse-hols README](../../README.md).
 ### 🚀 빠른 시작
 
 ```bash
-cd local/pg-clickhouse-lab
+cd extensions/pg-clickhouse-lab
 ./00-setup.sh
 
 # 랩 진행

@@ -246,7 +246,7 @@ decimal string. Same data, thirteen minutes instead of thirty-nine seconds.
 ### Where this goes next
 
 - **The full million.** Everything here is method; the interesting numbers are at 1M rows where a 6 GB working set stops fitting comfortably.
-- **`vchord_bm25`.** The dataset carries the article text, so lexical + vector hybrid search is one index away — and it has a counterpart to be measured against in [`usecase/fulltext-search`](../../usecase/fulltext-search/).
+- **`vchord_bm25`.** The dataset carries the article text, so lexical + vector hybrid search is one index away — and it has a counterpart to be measured against in [`usecase/fulltext-search`](https://github.com/litkhai/clickhouse-hols/tree/main/usecase/fulltext-search).
 - **Where the vectors should live.** If the embeddings only ever get searched and never updated, the argument that moved aggregation to ClickHouse in the [bike lab](../postgis-fdw-bike/) applies here too. That is the question worth ending on.
 
 ### Further reading
@@ -501,7 +501,7 @@ Parquet→텍스트 파이프라인→`COPY`는 예행연습에서 **분당 약 
 ### 다음
 
 - **100만 행 전체.** 여기 있는 것은 방법론이고, 흥미로운 수치는 6 GB 작업집합이 편하게 들어가지 않게 되는 100만 행에서 나옵니다.
-- **`vchord_bm25`.** 데이터에 본문 텍스트가 함께 있어서 어휘+벡터 하이브리드 검색이 인덱스 하나 거리이고, [`usecase/fulltext-search`](../../usecase/fulltext-search/)라는 비교 대상도 이미 있습니다.
+- **`vchord_bm25`.** 데이터에 본문 텍스트가 함께 있어서 어휘+벡터 하이브리드 검색이 인덱스 하나 거리이고, [`usecase/fulltext-search`](https://github.com/litkhai/clickhouse-hols/tree/main/usecase/fulltext-search)라는 비교 대상도 이미 있습니다.
 - **벡터가 어디에 있어야 하는가.** 임베딩이 검색만 되고 갱신되지 않는다면, [자전거 랩](../postgis-fdw-bike/)에서 집계를 ClickHouse로 옮긴 논리가 여기에도 적용됩니다. 마지막에 던질 만한 질문입니다.
 
 ### 더 읽을거리
