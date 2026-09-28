@@ -11,10 +11,8 @@ GitHub secret scanning and push protection are on.
 
 5 labs in the README tables; 0 single-language.
 
-## Re-verification notes
+## Open work
 
-Not re-run; update a README's verification line only after a real end-to-end run.
+Tracked as issues — [all open](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues) · [needs a re-run](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues?q=is%3Aopen+label%3Are-verify):
 
-| What | Note |
-|------|------|
-| All labs | Moved from clickhouse-hols without code changes; verification claims in each README date from before the move. |
+- [Re-run the labs from their new paths](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/1)
