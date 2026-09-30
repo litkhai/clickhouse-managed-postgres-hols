@@ -14,7 +14,7 @@ Hands-on labs for ClickHouse Managed Postgres and the `pg_clickhouse` extension:
 |-----|----------------|
 | [managed-postgres/provisioning](managed-postgres/provisioning/) | Create a service over the Cloud API, connect and verify |
 | [managed-postgres/postgis-fdw-bike](managed-postgres/postgis-fdw-bike/) | PostGIS beside 24M Seoul bike trips: geometry stays in Postgres, aggregates push down to ClickHouse through `pg_clickhouse` |
-| [managed-postgres/ny-citi-bike-workshop](managed-postgres/ny-citi-bike-workshop/) | The same split on a live New York Citi Bike feed — a self-service workshop in [its own repository](https://github.com/litkhai/lightweight-workshop-ny-citi-bike) |
+| [managed-postgres/ny-citi-bike-workshop](managed-postgres/ny-citi-bike-workshop/) | The same split on a live New York Citi Bike feed — a self-service workshop in [its own repository](https://github.com/litkhai/citi-bike-workshop) |
 | [managed-postgres/vector-search](managed-postgres/vector-search/) | pgvector, VectorChord and ClickHouse's vector index over the same million embeddings, compared at matched recall |
 
 ### 🧩 Extensions (`extensions/`)
@@ -58,7 +58,7 @@ ClickHouse Managed Postgres와 `pg_clickhouse` 확장 실습 모음입니다. �
 |-----|----------------|
 | [managed-postgres/provisioning](managed-postgres/provisioning/) | Cloud API로 서비스 생성, 접속·검증 |
 | [managed-postgres/postgis-fdw-bike](managed-postgres/postgis-fdw-bike/) | PostGIS와 2,400만 건의 따릉이 대여이력: 지오메트리는 Postgres에 남고 집계는 `pg_clickhouse`로 ClickHouse에 내려갑니다 |
-| [managed-postgres/ny-citi-bike-workshop](managed-postgres/ny-citi-bike-workshop/) | 같은 분업을 뉴욕 Citi Bike 실시간 피드로 — [별도 저장소](https://github.com/litkhai/lightweight-workshop-ny-citi-bike)의 셀프 워크숍 |
+| [managed-postgres/ny-citi-bike-workshop](managed-postgres/ny-citi-bike-workshop/) | 같은 분업을 뉴욕 Citi Bike 실시간 피드로 — [별도 저장소](https://github.com/litkhai/citi-bike-workshop)의 셀프 워크숍 |
 | [managed-postgres/vector-search](managed-postgres/vector-search/) | 같은 100만 임베딩에 pgvector·VectorChord·ClickHouse 벡터 인덱스를 동일 recall에서 비교 |
 
 ### 🧩 확장 (`extensions/`)
