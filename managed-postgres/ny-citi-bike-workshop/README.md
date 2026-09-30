@@ -6,12 +6,12 @@
 
 ## English
 
-**➜ [litkhai/lightweight-workshop-ny-citi-bike](https://github.com/litkhai/lightweight-workshop-ny-citi-bike)**
-· **[documentation site](https://litkhai.github.io/lightweight-workshop-ny-citi-bike/)**
+**➜ [litkhai/citi-bike-workshop](https://github.com/litkhai/citi-bike-workshop)**
+· **[documentation site](https://litkhai.github.io/citi-bike-workshop/)**
 
 This directory is a pointer. The workshop itself is a separate repository, in
-the same `lightweight-workshop-*` shape as
-[LLMOps in a Box](https://github.com/litkhai/lightweight-workshop-llmops-in-a-box):
+the same workshop shape as
+[LLMOps in a Box](https://github.com/litkhai/llmops-workshop):
 self-contained, English-only, published as its own documentation site, and
 handed to external participants who clone it on its own.
 
@@ -50,7 +50,7 @@ path through both managed products.
 
 ### 📄 License
 
-The workshop is [MIT](https://github.com/litkhai/lightweight-workshop-ny-citi-bike/blob/main/LICENSE)
+The workshop is [MIT](https://github.com/litkhai/citi-bike-workshop/blob/main/LICENSE)
 in its own repository. Citi Bike data is published by Lyft Bikes and Scooters,
 LLC under GBFS and is fetched at run time, not redistributed.
 
@@ -58,12 +58,12 @@ LLC under GBFS and is fetched at run time, not redistributed.
 
 ## 한국어
 
-**➜ [litkhai/lightweight-workshop-ny-citi-bike](https://github.com/litkhai/lightweight-workshop-ny-citi-bike)**
-· **[문서 사이트](https://litkhai.github.io/lightweight-workshop-ny-citi-bike/)**
+**➜ [litkhai/citi-bike-workshop](https://github.com/litkhai/citi-bike-workshop)**
+· **[문서 사이트](https://litkhai.github.io/citi-bike-workshop/)**
 
 이 디렉토리는 포인터입니다. 워크숍 본체는 별도 저장소에 있으며,
-[LLMOps in a Box](https://github.com/litkhai/lightweight-workshop-llmops-in-a-box)와
-같은 `lightweight-workshop-*` 형태입니다 — 독립 실행, 영문 전용, 자체 문서
+[LLMOps in a Box](https://github.com/litkhai/llmops-workshop)와
+같은 워크숍 형태입니다 — 독립 실행, 영문 전용, 자체 문서
 사이트 발행, 외부 참가자가 단독으로 클론해 사용.
 
 ### 다루는 내용
@@ -101,6 +101,6 @@ ClickPipes 연결은 참가자 본인 계정·과금에 묶인 작업이라, 공
 ### 📄 라이선스
 
 워크숍은 자체 저장소에서
-[MIT](https://github.com/litkhai/lightweight-workshop-ny-citi-bike/blob/main/LICENSE)입니다.
+[MIT](https://github.com/litkhai/citi-bike-workshop/blob/main/LICENSE)입니다.
 Citi Bike 데이터는 Lyft Bikes and Scooters, LLC가 GBFS로 발행하며 실행 시점에
 받아옵니다 — 재배포하지 않습니다.
