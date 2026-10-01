@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # pg_clickhouse Lab Setup
-# Starts a PostgreSQL 18 container preloaded with the pg_clickhouse extension,
-# alongside a ClickHouse 26.5 container on the same Docker network.
+# Starts a PostgreSQL 18 container preloaded with the pg_clickhouse 0.11.0 extension,
+# alongside a ClickHouse 26.9.7.9 container on the same Docker network.
 
 set -e
 
@@ -24,7 +24,7 @@ fi
 
 cd "$SCRIPT_DIR"
 
-echo "📦 Pulling images (clickhouse 26.5 + pg_clickhouse 18)..."
+echo "📦 Pulling images (ClickHouse 26.9.7.9 + pg_clickhouse 0.11.0 on PG 18)..."
 docker compose pull
 
 echo ""

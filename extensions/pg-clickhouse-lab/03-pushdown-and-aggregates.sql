@@ -121,11 +121,12 @@ LIMIT  10;
 \echo '========== 7. Session settings — forwarded to ClickHouse =========='
 
 -- pg_clickhouse.session_settings forwards arbitrary CH server settings per session.
--- Default is "join_use_nulls 1, group_by_use_nulls 1, final 1".
+-- Default is "join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0".
+-- Overriding drops these, and pushdown correctness depends on join_use_nulls (outer joins) and transform_null_in (the IN family).
 
 SHOW pg_clickhouse.session_settings;
 
-SET pg_clickhouse.session_settings = 'connect_timeout 5, max_block_size 8192';
+SET pg_clickhouse.session_settings = 'join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0, connect_timeout 5, max_block_size 8192';
 SHOW pg_clickhouse.session_settings;
 
 -- Reset to default

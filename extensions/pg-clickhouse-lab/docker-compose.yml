@@ -1,6 +1,7 @@
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:26.5
+    # ClickHouse 26.9.7.9, pinned to the multi-arch index digest (docker buildx imagetools inspect, 2026-10-01)
+    image: clickhouse/clickhouse-server:26.9.7.9@sha256:1f9c29a753cc07f9e2272a9d9383a840b222bbda78166da39dd10eecafe6500d
     container_name: pgch-clickhouse
     hostname: clickhouse
     ports:
@@ -25,7 +26,8 @@ services:
       - pgch_net
 
   postgres:
-    image: ghcr.io/clickhouse/pg_clickhouse:18
+    # pg_clickhouse 0.11.0 on PostgreSQL 18, pinned to the multi-arch index digest (docker buildx imagetools inspect, 2026-10-01)
+    image: ghcr.io/clickhouse/pg_clickhouse:18-0.11.0@sha256:ce7a2b4bc7ee899fc1b87c82c87435acc8ede0903b138c66a580ccd197f88b29
     container_name: pgch-postgres
     hostname: postgres
     depends_on:
