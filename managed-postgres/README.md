@@ -6,10 +6,13 @@
 
 ## English
 
-> **Status: in progress.** Two labs are written and were verified against a live
-> service on 2026-08-15 — [`provisioning/`](provisioning/) and
-> [`postgis-fdw-bike/`](postgis-fdw-bike/). The remaining areas below are drafted
-> from the product documentation and not written yet.
+> **Status: in progress.** Three labs are written and were verified against a
+> live service:
+> - [`provisioning/`](provisioning/) and [`postgis-fdw-bike/`](postgis-fdw-bike/) on 2026-08-15
+> - [`vector-search/`](vector-search/) on 2026-08-23
+>
+> The remaining areas below are drafted from the product documentation and not
+> written yet.
 
 Hands-on labs for [ClickHouse Managed Postgres](https://clickhouse.com/docs/products/managed-postgres/overview)
 — the managed Postgres service ClickHouse runs in partnership with Ubicloud,
@@ -63,10 +66,11 @@ verified against a running instance before it is written down.
 
 ## 한국어
 
-> **상태: 진행 중.** 랩 두 개를 작성했고 2026-08-15에 실제 서비스로
-> 검증했습니다 — [`provisioning/`](provisioning/)과
-> [`postgis-fdw-bike/`](postgis-fdw-bike/). 아래 나머지 영역은 제품 문서를 보고
-> 잡은 초안이며 아직 작성하지 않았습니다.
+> **상태: 진행 중.** 랩 세 개를 작성했고 실제 서비스로 검증했습니다:
+> - [`provisioning/`](provisioning/)과 [`postgis-fdw-bike/`](postgis-fdw-bike/)는 2026-08-15
+> - [`vector-search/`](vector-search/)는 2026-08-23
+>
+> 아래 나머지 영역은 제품 문서를 보고 잡은 초안이며 아직 작성하지 않았습니다.
 
 [ClickHouse Managed Postgres](https://clickhouse.com/docs/products/managed-postgres/overview)
 실습입니다. ClickHouse가 Ubicloud와 함께 운영하는 관리형 Postgres 서비스로,
