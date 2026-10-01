@@ -57,32 +57,232 @@ SETTINGS vector_search_index_fetch_multiplier = 1, use_skip_indexes = 0;
 -- Recall of the vector similarity index
 -- --------------------------------------------------------------------------
 --
--- hnsw_candidate_list_size_for_search is ClickHouse's ef_search. Sweep it the
--- same way the Postgres files sweep theirs.
+-- hnsw_candidate_list_size_for_search is ClickHouse's ef_search. The original
+-- file measured only 64, and so does this one.
+--
+-- Twenty statements instead of one correlated subquery (q.embedding inside the
+-- per-query ORDER BY ... LIMIT 10). Local 26.5.7, 26.6.8 and 26.9.7 reject that
+-- with "Code: 48 ... Correlated subqueries are not supported in JOINs yet"; Cloud
+-- 26.6.1 with "UNSUPPORTED_METHOD ... allow_experimental_correlated_subqueries".
+-- An experimental setting is not worth enabling for a comparison, so each query
+-- is unrolled and its reference vector is a constant the index can serve.
 
-SELECT 'ef_search=64' AS method, round(avg(hits) / 10.0, 3) AS recall
-FROM (
-    SELECT q.qid,
-           (SELECT count() FROM (
-                SELECT d.id FROM mpg_hols_vec.dbpedia d
-                ORDER BY cosineDistance(d.embedding, q.embedding) LIMIT 10
-            ) r INNER JOIN mpg_hols_vec.truth t ON t.qid = q.qid AND t.id = r.id) AS hits
-    FROM mpg_hols_vec.queries q
-) SETTINGS hnsw_candidate_list_size_for_search = 64;
+CREATE TABLE IF NOT EXISTS mpg_hols_vec.ann_results
+(method String, qid UInt32, id String)
+ENGINE = MergeTree ORDER BY (method, qid);
+
+TRUNCATE TABLE mpg_hols_vec.ann_results;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 1) AS q
+SELECT 'ef_search=64', 1, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 2) AS q
+SELECT 'ef_search=64', 2, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 3) AS q
+SELECT 'ef_search=64', 3, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 4) AS q
+SELECT 'ef_search=64', 4, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 5) AS q
+SELECT 'ef_search=64', 5, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 6) AS q
+SELECT 'ef_search=64', 6, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 7) AS q
+SELECT 'ef_search=64', 7, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 8) AS q
+SELECT 'ef_search=64', 8, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 9) AS q
+SELECT 'ef_search=64', 9, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 10) AS q
+SELECT 'ef_search=64', 10, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 11) AS q
+SELECT 'ef_search=64', 11, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 12) AS q
+SELECT 'ef_search=64', 12, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 13) AS q
+SELECT 'ef_search=64', 13, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 14) AS q
+SELECT 'ef_search=64', 14, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 15) AS q
+SELECT 'ef_search=64', 15, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 16) AS q
+SELECT 'ef_search=64', 16, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 17) AS q
+SELECT 'ef_search=64', 17, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 18) AS q
+SELECT 'ef_search=64', 18, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 19) AS q
+SELECT 'ef_search=64', 19, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+INSERT INTO mpg_hols_vec.ann_results
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 20) AS q
+SELECT 'ef_search=64', 20, id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
+
+-- 20 queries x 10 neighbours = 200 rows. Anything else means a statement above
+-- was edited or skipped.
+SELECT method, count() AS rows
+FROM mpg_hols_vec.ann_results
+GROUP BY method;
+
+SELECT r.method, round(count() / 200.0, 3) AS recall
+FROM mpg_hols_vec.ann_results r
+INNER JOIN mpg_hols_vec.truth t ON t.qid = r.qid AND t.id = r.id
+GROUP BY r.method;
+
+-- --------------------------------------------------------------------------
+-- Is the index actually being used?
+-- --------------------------------------------------------------------------
+--
+-- The same SELECT as the qid = 1 statement above, without the INSERT. The plan
+-- should list emb_idx as a vector_similarity index.
+
+EXPLAIN indexes = 1
+WITH (SELECT embedding FROM mpg_hols_vec.queries WHERE qid = 1) AS q
+SELECT id
+FROM mpg_hols_vec.dbpedia
+ORDER BY cosineDistance(embedding, q)
+LIMIT 10
+SETTINGS hnsw_candidate_list_size_for_search = 64;
 
 -- --------------------------------------------------------------------------
 -- What it costs
 -- --------------------------------------------------------------------------
+--
+-- From the active parts. system.columns.data_compressed_bytes reads 0.00 B for
+-- every column on ClickHouse Cloud 26.6.1, so it is not used here.
 
-SELECT name,
-       formatReadableSize(sum(data_compressed_bytes)) AS compressed
-FROM system.columns
-WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND name = 'embedding'
-GROUP BY name;
+SELECT `column` AS name,
+       formatReadableSize(sum(column_data_compressed_bytes))   AS compressed,
+       formatReadableSize(sum(column_data_uncompressed_bytes)) AS uncompressed
+FROM system.parts_columns
+WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND active
+  AND `column` = 'embedding'
+GROUP BY `column`;
 
+-- The index, from the skipping-index view ...
 SELECT type, name, formatReadableSize(data_compressed_bytes) AS on_disk
 FROM system.data_skipping_indices
 WHERE database = 'mpg_hols_vec' AND table = 'dbpedia';
+
+-- ... and the same figure from the parts, in case that is the populated one.
+SELECT formatReadableSize(sum(secondary_indices_compressed_bytes)) AS index_on_disk
+FROM system.parts
+WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND active;
 
 -- Compare this against the Postgres numbers. The row that matters is not
 -- "which is faster" — it is what each engine charges in bytes to answer at the

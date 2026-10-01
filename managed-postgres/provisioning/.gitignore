@@ -1,3 +1,5 @@
 # Real connection details never belong in a public repository.
 config.env
 *.log
+# Holds the deleted service's credentials (99-delete-service.sh renames config.env to this).
+config.env.deleted-*
