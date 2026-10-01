@@ -89,14 +89,14 @@ SELECT count()                                   AS rows,
        formatReadableSize(sum(byteSize(embedding))) AS embedding_bytes
 FROM mpg_hols_vec.dbpedia;
 
--- Per-column size, from the active parts. system.columns.data_compressed_bytes
--- reads 0.00 B for every column on ClickHouse Cloud 26.6.1, so use the parts.
-SELECT `column` AS name,
-       formatReadableSize(sum(column_data_compressed_bytes))   AS compressed,
-       formatReadableSize(sum(column_data_uncompressed_bytes)) AS uncompressed
-FROM system.parts_columns
-WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND active
-GROUP BY `column` ORDER BY sum(column_data_compressed_bytes) DESC;
+-- Table size, from system.tables. Per-column sizes read 0.00 B on ClickHouse
+-- Cloud 26.6.1 in both system.columns and system.parts_columns, so the table
+-- total is the readout that is populated there. It needs no extra grant.
+SELECT formatReadableSize(total_bytes)              AS compressed,
+       formatReadableSize(total_bytes_uncompressed) AS uncompressed,
+       total_rows
+FROM system.tables
+WHERE database = 'mpg_hols_vec' AND name = 'dbpedia';
 
 -- One nearest-neighbour query, to prove the index answers.
 WITH (SELECT embedding FROM mpg_hols_vec.dbpedia LIMIT 1) AS q

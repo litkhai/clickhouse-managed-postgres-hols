@@ -263,26 +263,20 @@ SETTINGS hnsw_candidate_list_size_for_search = 64;
 -- What it costs
 -- --------------------------------------------------------------------------
 --
--- From the active parts. system.columns.data_compressed_bytes reads 0.00 B for
--- every column on ClickHouse Cloud 26.6.1, so it is not used here.
+-- The table, from system.tables. Per-column sizes read 0.00 B on ClickHouse
+-- Cloud 26.6.1 in both system.columns and system.parts_columns, so the table
+-- total is the readout that is populated there. It needs no extra grant.
+SELECT formatReadableSize(total_bytes)              AS compressed,
+       formatReadableSize(total_bytes_uncompressed) AS uncompressed,
+       total_rows
+FROM system.tables
+WHERE database = 'mpg_hols_vec' AND name = 'dbpedia';
 
-SELECT `column` AS name,
-       formatReadableSize(sum(column_data_compressed_bytes))   AS compressed,
-       formatReadableSize(sum(column_data_uncompressed_bytes)) AS uncompressed
-FROM system.parts_columns
-WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND active
-  AND `column` = 'embedding'
-GROUP BY `column`;
-
--- The index, from the skipping-index view ...
+-- The index, from the skipping-index view.
+-- A restricted user needs SELECT ON system.data_skipping_indices.
 SELECT type, name, formatReadableSize(data_compressed_bytes) AS on_disk
 FROM system.data_skipping_indices
 WHERE database = 'mpg_hols_vec' AND table = 'dbpedia';
-
--- ... and the same figure from the parts, in case that is the populated one.
-SELECT formatReadableSize(sum(secondary_indices_compressed_bytes)) AS index_on_disk
-FROM system.parts
-WHERE database = 'mpg_hols_vec' AND table = 'dbpedia' AND active;
 
 -- Compare this against the Postgres numbers. The row that matters is not
 -- "which is faster" — it is what each engine charges in bytes to answer at the
