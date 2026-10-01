@@ -7,6 +7,9 @@
 -- text-embedding-3-large, published as 26 Parquet files. No API key, no
 -- download step, no embedding model: ClickHouse reads the Parquet over HTTPS
 -- with url() and Postgres pulls from here in sql/02-load-from-clickhouse.sql.
+--
+-- Database: mpg_hols_vec. A dedicated database name, so the lab can run on a shared
+-- ClickHouse service without touching anything else on it.
 
 -- --------------------------------------------------------------------------
 -- The one setting you cannot skip
@@ -21,9 +24,9 @@
 -- which reads like a broken file and is not one.
 SET max_http_get_redirects = 10;
 
-CREATE DATABASE IF NOT EXISTS vec;
+CREATE DATABASE IF NOT EXISTS mpg_hols_vec;
 
-CREATE TABLE IF NOT EXISTS vec.dbpedia
+CREATE TABLE IF NOT EXISTS mpg_hols_vec.dbpedia
 (
     id        String,
     title     String,
@@ -43,7 +46,7 @@ ORDER BY id;
 --
 -- The source column name has dashes in it, so it needs backticks.
 
-INSERT INTO vec.dbpedia
+INSERT INTO mpg_hols_vec.dbpedia
 SELECT _id                                     AS id,
        title,
        text                                    AS body,
@@ -54,7 +57,7 @@ FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-te
 
 -- All 26 files. Uncomment when you want the full million.
 --
--- INSERT INTO vec.dbpedia
+-- INSERT INTO mpg_hols_vec.dbpedia
 -- SELECT _id, title, text, arrayMap(x -> toFloat32(x), `text-embedding-3-large-1536-embedding`)
 -- FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/{0..25}.parquet',
 --          'Parquet');
@@ -71,11 +74,11 @@ FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-te
 -- Float32 — worth checking rather than believing, which is what the recall
 -- harness in sql/03-ground-truth.sql is for.
 
-ALTER TABLE vec.dbpedia
+ALTER TABLE mpg_hols_vec.dbpedia
     ADD INDEX IF NOT EXISTS emb_idx embedding
     TYPE vector_similarity('hnsw', 'cosineDistance', 1536, 'bf16', 16, 64);
 
-ALTER TABLE vec.dbpedia MATERIALIZE INDEX emb_idx SETTINGS mutations_sync = 2;
+ALTER TABLE mpg_hols_vec.dbpedia MATERIALIZE INDEX emb_idx SETTINGS mutations_sync = 2;
 
 -- --------------------------------------------------------------------------
 -- Check
@@ -84,18 +87,18 @@ ALTER TABLE vec.dbpedia MATERIALIZE INDEX emb_idx SETTINGS mutations_sync = 2;
 SELECT count()                                   AS rows,
        length(any(embedding))                    AS dims,
        formatReadableSize(sum(byteSize(embedding))) AS embedding_bytes
-FROM vec.dbpedia;
+FROM mpg_hols_vec.dbpedia;
 
 SELECT name,
        formatReadableSize(sum(data_compressed_bytes))   AS compressed,
        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed
 FROM system.columns
-WHERE database = 'vec' AND table = 'dbpedia'
+WHERE database = 'mpg_hols_vec' AND table = 'dbpedia'
 GROUP BY name ORDER BY sum(data_compressed_bytes) DESC;
 
 -- One nearest-neighbour query, to prove the index answers.
-WITH (SELECT embedding FROM vec.dbpedia LIMIT 1) AS q
+WITH (SELECT embedding FROM mpg_hols_vec.dbpedia LIMIT 1) AS q
 SELECT title, round(cosineDistance(embedding, q), 4) AS dist
-FROM vec.dbpedia
+FROM mpg_hols_vec.dbpedia
 ORDER BY cosineDistance(embedding, q)
 LIMIT 10;

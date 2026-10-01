@@ -15,6 +15,7 @@ load_config
 if [ $# -eq 0 ]; then
     docker run --rm -it \
         -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE \
+        -e CH_HOST -e CH_PORT -e CH_USER -e CH_PASSWORD -e CH_DATABASE \
         -v "$LAB_DIR/sql:/sql:ro" \
         "$PSQL_IMAGE" psql
 else

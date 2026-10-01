@@ -38,14 +38,26 @@ EOF
 }
 
 # The hostname carries the service name and id, and people screenshot their
-# terminals. Mask it on the way out.
+# terminals. Mask it on the way out: the Postgres host always, and the ClickHouse
+# host when CH_HOST is set.
 mask() {
-    sed -E "s/${PGHOST//./\\.}/<your-service>.pg.clickhouse.cloud/g"
+    local expr=""
+    if [ -n "${PGHOST:-}" ]; then
+        expr="s/${PGHOST//./\\.}/<your-service>.pg.clickhouse.cloud/g"
+    fi
+    if [ -n "${CH_HOST:-}" ]; then
+        expr="${expr:+$expr;}s/${CH_HOST//./\\.}/<your-service>.clickhouse.cloud/g"
+    fi
+    if [ -n "$expr" ]; then sed -E "$expr"; else cat; fi
 }
 
+# The CH_* variables are passed by name only (-e NAME, no =value), so the
+# ClickHouse password never appears in the docker command line or in `ps`.
+# sql/_clickhouse-vars.sql reads them with \getenv.
 psql_run() {
     docker run --rm -i \
         -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE \
+        -e CH_HOST -e CH_PORT -e CH_USER -e CH_PASSWORD -e CH_DATABASE \
         -v "$LAB_DIR/sql:/sql:ro" \
         "$PSQL_IMAGE" psql "$@"
 }
