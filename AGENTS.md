@@ -14,6 +14,9 @@ Differences from the core repository:
 
 - No Pages site and no `site` CI job (decision D7). The root README tables are
   documentation only, not a site index.
+- `docs/labs.json` is the notes-site export: the labs whose `lab.yaml` sets `web: true`
+  (`tools/lab.schema.md`), written by `tools/labs_json.py` and checked locally with `--check`
+  (README, Repository checks). Never set `web` without the owner's choice for that lab.
 - Enable the guard once per clone: `git config core.hooksPath .githooks`.
 
 ## Rules for this repository
