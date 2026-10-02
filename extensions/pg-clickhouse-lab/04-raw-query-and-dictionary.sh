@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "==========================================================="
-echo " pg_clickhouse Lab 04: clickhouse_raw_query + Dictionaries "
+echo " pg_clickhouse Lab 04: clickhouse_query/clickhouse_perform + Dictionaries "
 echo "==========================================================="
 echo ""
 

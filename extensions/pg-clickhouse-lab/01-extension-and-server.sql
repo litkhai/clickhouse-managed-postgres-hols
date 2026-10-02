@@ -49,25 +49,22 @@ FROM   pg_user_mappings u
 WHERE  u.srvname = 'ch_srv';
 
 \echo ''
-\echo '========== 5. Sanity check via clickhouse_raw_query =========='
+\echo '========== 5. Sanity check via clickhouse_server_version / clickhouse_query =========='
 
--- Round-trip a query through the HTTP interface to confirm reachability
-SELECT trim(clickhouse_raw_query(
-    'SELECT version()',
-    'host=clickhouse port=8123'
-)) AS clickhouse_version;
+-- Both functions connect through the foreign server's own driver (binary, port 9000)
+-- using the server options and the current user mapping, not a connection string.
+SELECT clickhouse_server_version('ch_srv') AS clickhouse_version;
 
--- And a tiny aggregate against the bounded numbers() table function
-SELECT trim(clickhouse_raw_query(
-    'SELECT count() FROM numbers(1000)',
-    'host=clickhouse port=8123'
-)) AS numbers_count;
+-- And a tiny aggregate against the bounded numbers() table function;
+-- clickhouse_query returns SETOF record, so it needs a column definition list.
+SELECT * FROM clickhouse_query('ch_srv', 'SELECT count() FROM numbers(1000)')
+    AS t(numbers_count bigint);
 
 \echo ''
 \echo '========== 6. Inspect type-mapping reference =========='
 
 -- Functions provided by the extension
-SELECT proname, pg_get_function_result(p.oid) AS returns
+SELECT proname, p.prokind, pg_get_function_result(p.oid) AS returns
 FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace
 WHERE  p.proname LIKE 'clickhouse_%'

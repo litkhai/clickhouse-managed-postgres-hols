@@ -1,42 +1,41 @@
--- Lab 04 — Escape hatch: clickhouse_raw_query() lets you send arbitrary SQL to ClickHouse
+-- Lab 04 — Escape hatch: clickhouse_query() and clickhouse_perform() send arbitrary SQL to ClickHouse
+-- clickhouse_query(server, sql) returns rows (needs a column definition list); CALL clickhouse_perform(server, sql) returns nothing.
 -- This is how you create CH-native objects (dictionaries, materialized views, etc.) from PG.
+-- Both connect with the foreign server's own options and the current user mapping.
 
-\echo '========== 1. SELECT via raw HTTP =========='
+\echo '========== 1. SELECT via clickhouse_query =========='
 
-SELECT trim(clickhouse_raw_query(
-    'SELECT version()',
-    'host=clickhouse port=8123'
-)) AS clickhouse_version;
+SELECT * FROM clickhouse_query('ch_srv', 'SELECT version()') AS t(clickhouse_version text);
 
 \echo ''
-\echo '========== 2. DDL via raw query (CREATE TABLE in CH) =========='
+\echo '========== 2. DDL and INSERT via clickhouse_perform (CREATE TABLE in CH) =========='
 
 -- Idempotency: drop dictionary first (it depends on country_lookup), then table.
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     DROP DICTIONARY IF EXISTS lab.country_dict
-$$, 'host=clickhouse port=8123');
+$$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     DROP TABLE IF EXISTS lab.country_lookup
-$$, 'host=clickhouse port=8123');
+$$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     CREATE TABLE lab.country_lookup
     (
         country_code String,
         country_name String,
         continent    String
     ) ENGINE = MergeTree() ORDER BY country_code
-$$, 'host=clickhouse port=8123');
+$$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     INSERT INTO lab.country_lookup VALUES
         ('US', 'United States',  'North America'),
         ('KR', 'South Korea',    'Asia'),
         ('JP', 'Japan',          'Asia'),
         ('DE', 'Germany',        'Europe'),
         ('BR', 'Brazil',         'South America')
-$$, 'host=clickhouse port=8123');
+$$);
 
 \echo ''
 \echo '========== 3. Map the new CH table back into PG =========='
@@ -71,13 +70,13 @@ GROUP  BY cl.continent, u.tier
 ORDER  BY cl.continent, u.tier;
 
 \echo ''
-\echo '========== 5. Create a CH DICTIONARY via raw_query (and use dictGet pushdown) =========='
+\echo '========== 5. Create a CH DICTIONARY via clickhouse_perform (and use dictGet pushdown) =========='
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     DROP DICTIONARY IF EXISTS lab.country_dict
-$$, 'host=clickhouse port=8123');
+$$);
 
-SELECT clickhouse_raw_query($$
+CALL clickhouse_perform('ch_srv', $$
     CREATE DICTIONARY lab.country_dict
     (
         country_code String,
@@ -88,13 +87,11 @@ SELECT clickhouse_raw_query($$
     SOURCE(CLICKHOUSE(DB 'lab' TABLE 'country_lookup'))
     LAYOUT(HASHED())
     LIFETIME(MIN 0 MAX 0)
-$$, 'host=clickhouse port=8123');
+$$);
 
 -- Force the dictionary to load
-SELECT trim(clickhouse_raw_query(
-    'SELECT dictGet(''lab.country_dict'', ''country_name'', ''KR'')',
-    'host=clickhouse port=8123'
-)) AS lookup_KR;
+SELECT * FROM clickhouse_query('ch_srv', $$SELECT dictGet('lab.country_dict', 'country_name', 'KR')$$)
+    AS t(lookup_kr text);
 
 \echo ''
 \echo '========== 6. Use dictGet() from PostgreSQL via pushdown =========='
@@ -115,16 +112,9 @@ ORDER  BY user_id
 LIMIT  5;
 
 -- To project dictionary attributes in the SELECT list, wrap the entire query
--- in a clickhouse_raw_query call so PG never tries to evaluate dictGet locally.
-SELECT trim(clickhouse_raw_query($$
-    SELECT toString(user_id) || ' -> ' || dictGet('lab.country_dict', 'country_name', country) || ' (' ||
-           dictGet('lab.country_dict', 'continent', country) || ')'
-    FROM   lab.users
-    WHERE  tier = 'enterprise'
-    ORDER  BY user_id
-    LIMIT  5
-    FORMAT TSV
-$$, 'host=clickhouse port=8123')) AS dict_projected;
+-- in a clickhouse_query call so PG never tries to evaluate dictGet locally.
+SELECT * FROM clickhouse_query('ch_srv', $$SELECT user_id, dictGet('lab.country_dict','country_name',country) AS country_name, dictGet('lab.country_dict','continent',country) AS continent FROM lab.users WHERE tier = 'enterprise' ORDER BY user_id LIMIT 5$$)
+    AS t(user_id bigint, country_name text, continent text);
 
 \echo ''
 \echo '========== 7. Pushdown of CH-specific aggregates: uniq / quantile =========='
@@ -147,12 +137,13 @@ ORDER  BY event_type;
 
 \echo ''
 \echo '========== 8. Safety note =========='
-\echo '  clickhouse_raw_query() has NO EXECUTE privileges by default — only superusers'
-\echo '  can call it. GRANT EXECUTE only to roles that legitimately need ad-hoc CH access.'
-\echo '  Example:'
-\echo '    GRANT EXECUTE ON FUNCTION clickhouse_raw_query(text, text) TO data_engineer;'
+\echo '  PUBLIC has no EXECUTE on clickhouse_query() or clickhouse_perform() by default —'
+\echo '  superusers can call them; grant explicitly, and only to roles that legitimately'
+\echo '  need ad-hoc CH access. Example:'
+\echo '    GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO data_engineer;'
+\echo '    GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO data_engineer;'
 
 \echo ''
 \echo '========== Lab 04 complete =========='
 \echo 'You have now: installed the extension, mapped tables, observed pushdown,'
-\echo 'and used the raw-query escape hatch. See README.md for further reading.'
+\echo 'and used the clickhouse_query / clickhouse_perform escape hatch. See README.md for further reading.'
