@@ -4,7 +4,7 @@
 
 ## CI
 
-`checks` (on pull requests): `links`, `syntax`, `secrets` (gitleaks), `hygiene` — green.
+`checks` runs one job on pull requests, `guard`: gitleaks and the repository-hygiene checks. `links` and `syntax` run only by hand (`gh workflow run checks.yml --ref <branch>`). Nothing runs on push to `main`; the pre-commit hook covers direct pushes.
 GitHub secret scanning and push protection are on.
 
 ## Inventory
