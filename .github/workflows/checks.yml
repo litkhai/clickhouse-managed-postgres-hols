@@ -2,33 +2,28 @@ name: checks
 
 # Solo repository: checks run on pull requests (and by hand), not again on the
 # push to main that merging a PR produces. The pre-commit hook covers direct pushes.
+#
+# What runs:
+#   - pull request: one job, `guard` (gitleaks and the three hygiene checks).
+#   - by hand (workflow_dispatch): `guard` plus `links` and `syntax`.
+#     gh workflow run checks.yml --ref <branch>
 on:
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same ref makes the older run pointless.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  links:
-    name: markdown links
+  guard:
+    name: guard — secrets and hygiene
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Resolve every relative link
-        run: python3 .github/scripts/check_links.py
-
-  syntax:
-    name: shell / python / yaml syntax
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Parse-check tracked files
-        run: ./.github/scripts/check_syntax.sh
-
-  secrets:
-    name: secret scan
-    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,12 +33,6 @@ jobs:
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  hygiene:
-    name: repository hygiene
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - name: No tracked file may match an ignore rule
         # gitignore does not apply to already-tracked files, so a rule added
         # after the fact is silently inert. Catch that instead of trusting it.
@@ -97,3 +86,25 @@ jobs:
             exit 1
           fi
           echo "OK: no host home paths in code"
+
+  links:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: markdown links
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve every relative link
+        run: python3 .github/scripts/check_links.py
+
+  syntax:
+    # Runs only by hand: gh workflow run checks.yml --ref <branch>
+    if: github.event_name == 'workflow_dispatch'
+    name: shell / python / yaml syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse-check tracked files
+        run: ./.github/scripts/check_syntax.sh
