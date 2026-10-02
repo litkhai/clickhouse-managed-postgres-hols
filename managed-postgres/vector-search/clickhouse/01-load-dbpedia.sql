@@ -92,6 +92,7 @@ FROM mpg_hols_vec.dbpedia;
 -- Table size, from system.tables. Per-column sizes read 0.00 B on ClickHouse
 -- Cloud 26.6.1 in both system.columns and system.parts_columns, so the table
 -- total is the readout that is populated there. It needs no extra grant.
+-- total_bytes includes the vector index; subtract the index size for data alone.
 SELECT formatReadableSize(total_bytes)              AS compressed,
        formatReadableSize(total_bytes_uncompressed) AS uncompressed,
        total_rows

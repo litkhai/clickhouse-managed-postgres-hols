@@ -11,9 +11,13 @@ actually be used, and finding that out is the first result this lab produced.
 
 | Extension | Catalogue | On a real service | |
 |---|---|---|---|
-| `vector` | 0.8.2 | **0.8.5, installs and works** | pgvector — `hnsw`, `ivfflat` |
+| `vector` | 0.8.6 | **0.8.6, installs and works** | pgvector — `hnsw`, `ivfflat` |
 | `vchord` | 1.1.1 | ❌ **cannot be created** | VectorChord — needs `shared_preload_libraries` |
 | `vchord_bm25` | 0.3.0 | ❌ same blocker | BM25 as an access method |
+
+The catalogue was read on 2026-10-01 and the service checked on 2026-10-02. On
+2026-08-23 the catalogue listed `vector` 0.8.2 and the service installed 0.8.5;
+`vchord` failed the same way both times.
 
 ```text
 postgres=> CREATE EXTENSION vchord;
@@ -33,10 +37,12 @@ in Postgres and a fourth way in ClickHouse, and the question this lab answers
 is not "which is fastest" but **where the line is**: at what size does vector
 search stop belonging in Postgres, and does VectorChord move that line?
 
-> **Status: run end to end against both real products on 2026-08-23.**
-> ClickHouse Managed Postgres (PostgreSQL 18.4, pgvector 0.8.5) and ClickHouse
-> Cloud 26.4.1. Every number below that carries a unit was measured there, not
-> on a laptop and not quoted from a vendor.
+> **Status: run end to end against both real products, most recently on
+> 2026-10-02** — ClickHouse Managed Postgres (PostgreSQL 18.6, pgvector 0.8.6)
+> and ClickHouse Cloud 26.6.1. The first run was on 2026-08-23 (PostgreSQL 18.4,
+> pgvector 0.8.5, ClickHouse Cloud 26.4.1), and the tables below give both. Every
+> number that carries a unit was measured on those services, not on a laptop and
+> not quoted from a vendor.
 
 ### Why not just read a pgvector tutorial
 
@@ -74,27 +80,49 @@ is enough to see every effect this lab is about.
 ### Run it
 
 ```bash
-cp config.env.example config.env && $EDITOR config.env
+cp config.env.example config.env && $EDITOR config.env   # PG* for Postgres, CH_* for ClickHouse
 ```
 
-**On ClickHouse** — paste [`clickhouse/01-load-dbpedia.sql`](clickhouse/01-load-dbpedia.sql)
-into the SQL console. It creates `vec.dbpedia`, loads it from Hugging Face, and
-adds a `vector_similarity` index.
+**On ClickHouse:** run [`clickhouse/01-load-dbpedia.sql`](clickhouse/01-load-dbpedia.sql), either through the client or by pasting it into the SQL console.
+
+```bash
+./scripts/clickhouse.sh < clickhouse/01-load-dbpedia.sql
+```
+
+It creates `mpg_hols_vec.dbpedia`, loads it from Hugging Face and adds a `vector_similarity` index. The database has a dedicated name, so the lab can run on a shared ClickHouse service without touching anything else there.
 
 **On Postgres:**
 
 ```bash
 ./scripts/psql.sh -f /sql/01-schema.sql
-./scripts/psql.sh -v ch_host=… -v ch_pass=… -f /sql/02-load-from-clickhouse.sql
-./scripts/psql.sh -f /sql/03-ground-truth.sql     # exact answers + the harness
+./scripts/psql.sh -f /sql/02-load-from-clickhouse.sql   # reads CH_* from config.env
+./scripts/psql.sh -f /sql/03-ground-truth.sql           # exact answers + the harness
 
 ./scripts/psql.sh -f /sql/10-pgvector-hnsw.sql
 ./scripts/psql.sh -f /sql/11-pgvector-ivfflat.sql
 ./scripts/psql.sh -f /sql/12-vectorchord.sql
 ```
 
-Then [`clickhouse/02-compare.sql`](clickhouse/02-compare.sql) measures the
-ClickHouse side by the same rule.
+**Back on ClickHouse:** [`clickhouse/02-compare.sql`](clickhouse/02-compare.sql) measures the ClickHouse side by the same rule.
+
+```bash
+./scripts/clickhouse.sh < clickhouse/02-compare.sql
+```
+
+**Credentials.** Both scripts run their client in a container, and the password reaches it as an environment variable, never on a command line. `-v ch_host=…` and `-v ch_pass=…` still override `config.env` for `02-load`.
+
+**On a shared ClickHouse service**, use a user that can only touch `mpg_hols_vec`. Run these as the service's `default` user. They are what the 2026-10-02 re-run granted on ClickHouse Cloud 26.6.1:
+
+```sql
+CREATE USER mpg_hols IDENTIFIED BY '…';
+CREATE DATABASE IF NOT EXISTS mpg_hols_vec;
+GRANT CURRENT GRANTS ON mpg_hols_vec.* TO mpg_hols;        -- GRANT ALL is not supported on Cloud
+GRANT CREATE TEMPORARY TABLE ON *.* TO mpg_hols;
+GRANT READ ON URL TO mpg_hols;                             -- url() for the Hugging Face Parquet
+GRANT SELECT ON system.data_skipping_indices TO mpg_hols;  -- the index size in 02-compare
+```
+
+On a server without read/write source grants, the `URL` grant is written `GRANT URL ON *.* TO mpg_hols`.
 
 No cloud account yet? `./scripts/local-postgres.sh up` starts a container with
 both extensions, and everything except the ClickHouse comparison works against
@@ -124,44 +152,50 @@ tells you nothing.
 
 ### What the numbers looked like
 
-Measured on the **real products**: ClickHouse Managed Postgres (PostgreSQL
-18.4, pgvector 0.8.5) and ClickHouse Cloud 26.4.1, one Parquet file —
-**38,462 rows × 1536 dimensions** — loaded into both. Warm; see the last
-finding below.
+Measured on the **real products**, with one Parquet file loaded into both:
+**38,462 rows × 1536 dimensions**. All figures are warm; see the last finding below.
 
-**Postgres**
+There were two runs:
+
+| Run | Postgres | ClickHouse |
+|---|---|---|
+| 2026-08-23 | PostgreSQL 18.4, pgvector 0.8.5 | ClickHouse Cloud 26.4.1 |
+| 2026-10-02 | PostgreSQL 18.6, pgvector 0.8.6, on an `r6gd.large` | ClickHouse Cloud 26.6.1 |
+
+The 2026-10-02 Postgres service was shared with two live demos: pg_cron jobs ran every minute and two CDC slots were active.
+
+**Postgres** — each cell is *2026-08-23 / 2026-10-02*
 
 | Method | Build | recall@10 | ms / query | Index size |
 |---|---|---|---|---|
-| exact, no index | — | 1.000 | **375.1** | — (table 322 MB) |
-| `hnsw`, `ef_search=20` | 68.4 s | 0.975 | **0.99** | 300 MB |
-| `hnsw`, `ef_search=40` | " | 0.975 | 1.45 | 300 MB |
-| `hnsw`, `ef_search=100` | " | 0.980 | 2.90 | 300 MB |
-| `ivfflat`, `probes=1` | 11.4 s | 0.700 | 1.05 | 301 MB |
-| `ivfflat`, `probes=10` | " | 0.975 | 7.33 | 301 MB |
-| `ivfflat`, `probes=30` | " | 0.995 | 21.44 | 301 MB |
-| VectorChord | — | — | — | **unavailable** |
+| exact, no index | — | 1.000 / 1.000 | **375.1** / 376.0 | — (table 322 MB / 322 MB) |
+| `hnsw`, `ef_search=20` | 68.4 s / 67.0 s | 0.975 / 0.990 | **0.99** / 0.98 | 300 MB / 300 MB |
+| `hnsw`, `ef_search=40` | " | 0.975 / 0.990 | 1.45 / 1.50 | " |
+| `hnsw`, `ef_search=100` | " | 0.980 / 0.990 | 2.90 / 2.91 | " |
+| `ivfflat`, `probes=1` | 11.4 s / 11.1 s | 0.700 / 0.740 | 1.05 / 1.12 | 301 MB / 301 MB |
+| `ivfflat`, `probes=10` | " | 0.975 / 0.970 | 7.33 / 8.15 | " |
+| `ivfflat`, `probes=30` | " | 0.995 / 0.990 | 21.44 / 22.08 | " |
+| VectorChord | — | — | — | **unavailable** in both runs |
 
 **ClickHouse**, same rows, `vector_similarity('hnsw','cosineDistance',1536,'bf16',16,64)`
 
-| | |
-|---|---|
-| Load from Hugging Face | 44 s |
-| Index build | 29 s |
-| Storage | 305.9 MiB on disk — 215.3 MiB data + **90.6 MiB index** |
-| recall@10 | 0.985 |
-| Server-side latency | **~530 ms**, reading 25,880 of 38,462 rows |
+| | 2026-08-23 (26.4.1) | 2026-10-02 (26.6.1) |
+|---|---|---|
+| Load from Hugging Face + index build | 44 s + 29 s | 53 s for all of `01-load` |
+| Storage | 305.9 MiB on disk — 215.3 MiB data + **90.6 MiB index** | 305.87 MiB — 215.33 MiB data + **90.54 MiB index** |
+| recall@10, `ef_search=64` | 0.985 | 0.985 |
+| `EXPLAIN indexes=1` | granules 24 → 6 | granules 24 → 6 |
+| Server-side latency | **~530 ms**, reading 25,880 of 38,462 rows | not re-measured |
 
 Four things fall out, and none of them is the one people expect.
 
-**At equal recall, HNSW beats IVFFlat by five times.** Both reach 0.975 —
-`ef_search=40` at 1.45 ms against `probes=10` at 7.33 ms. Push IVFFlat to 0.995
-and it costs 21.44 ms, by which point the index has stopped earning its keep.
-HNSW paid for that with a build six times longer.
+**At equal recall, HNSW beats IVFFlat by five times.** In the first run both reached 0.975: `ef_search=40` took 1.45 ms and `probes=10` took 7.33 ms. Pushing IVFFlat to 0.995 cost 21.44 ms, by which point the index had stopped earning its keep. HNSW paid for that with a build six times longer.
+
+The re-run puts the two further apart. HNSW reached 0.990 at 0.98 ms, where IVFFlat needed `probes=30` and 22.08 ms.
 
 **ClickHouse's vector index is not competitive at this size, and the plan says
 why.** `EXPLAIN indexes=1` shows it working — granules pruned from 24 to 6 —
-and the query still reads 25,880 of 38,462 rows and takes ~530 ms server-side.
+and on 2026-08-23 the query still read 25,880 of 38,462 rows and took ~530 ms server-side.
 The default `GRANULARITY 100000000` means almost no index instances get built
 for a small part, so pruning is coarse. Against 0.99 ms in Postgres that is not
 a close call. **At 38k rows the vectors belong in Postgres**, and this lab's
@@ -172,7 +206,9 @@ question — where is the line — has its lower bound: well above here.
 vectors. ClickHouse's `bf16` index is 90.6 MiB for the same data. Note also
 that the embeddings themselves barely compress — 239.5 MiB down to 215.3 MiB,
 about 10%, because uniformly distributed floats have nothing for a codec to
-find. Whatever engine holds a billion of these will pay for them.
+find. Whatever engine holds a billion of these will pay for them. (That
+per-column figure is from 2026-08-23; ClickHouse Cloud 26.6.1 no longer reports
+per-column sizes, see below.)
 
 **The first measurement you take is wrong.** A rehearsal of this comparison on
 a local container put HNSW at 5.6 ms, three times its warm number, because the
@@ -180,7 +216,16 @@ index had just been built and the page cache was empty. Every figure above is
 from a warm run. A benchmark that does not say which is not telling you the
 thing you need.
 
-### Six things that will bite you
+### Eight things that will bite you
+
+**A correlated recall query stopped working after 26.4.** The first version of `02-compare.sql` scored all twenty queries in one statement. Each per-query `ORDER BY … LIMIT 10` referred to the outer `q.embedding`. It ran on 26.4.1, and later versions reject it:
+
+- Local 26.5.7, 26.6.8 and 26.9.7: `Code: 48 … Correlated subqueries are not supported in JOINs yet`
+- Cloud 26.6.1: `UNSUPPORTED_METHOD`, asking for `allow_experimental_correlated_subqueries`
+
+The file now unrolls the twenty queries instead of enabling an experimental setting. Each one takes its reference vector as a constant scalar subquery, which the vector index still serves; `EXPLAIN` shows granules pruned from 24 to 6.
+
+**ClickHouse Cloud does not report per-column sizes.** On 26.6.1, `system.columns` and `system.parts_columns` read `0.00 B` for every column. `system.tables.total_bytes` is populated, and it includes the vector index, so subtract the index before comparing it with a Postgres table size.
 
 **Two settings cannot be sent as `SET` over the HTTPS interface.** ClickHouse
 Cloud's HTTP endpoint rejects multi-statement bodies —
@@ -230,15 +275,16 @@ which is the failure mode worth recognising, because it looks like data.
 
 | | |
 |---|---|
-| ✅ Verified on the real products | `vchord` cannot be created and `ALTER SYSTEM` is refused; loading Hugging Face Parquet into ClickHouse Cloud with `url()`; the `vector_similarity` index and its plan; pulling into Managed Postgres through `pg_clickhouse`; pgvector `hnsw` and `ivfflat` builds, sizes, recall and latency; every number in the tables above |
-| ❌ Blocked, not skipped | **VectorChord.** `sql/12-vectorchord.sql` is kept because the blocker may be lifted — the extension is packaged, it is only missing from `shared_preload_libraries` |
+| ✅ Verified on the real products | Run on 2026-08-23 and again on 2026-10-02: `vchord` cannot be created; loading Hugging Face Parquet into ClickHouse Cloud with `url()`; the `vector_similarity` index and its plan; pulling into Managed Postgres through `pg_clickhouse`; pgvector `hnsw` and `ivfflat` builds, sizes, recall and latency; ClickHouse recall at `ef_search=64`; every number in the tables above except those marked otherwise. `ALTER SYSTEM` being refused was checked on 2026-08-23 only |
+| ❌ Blocked, not skipped | **VectorChord.** `sql/12-vectorchord.sql` is kept because the blocker may be lifted — the extension is packaged, it is only missing from `shared_preload_libraries`. Without it, the file currently keeps going and prints exact-scan rows labelled as VectorChord ([#13](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/13)) |
 | ❌ Not yet run | The full million rows. One Parquet file of 26 was used |
 | ❌ Not yet written | The `vchord_bm25` hybrid-search stage, which the same blocker prevents anyway |
 
 The load path was measured too, and it is the reason
 [`sql/02-load-from-clickhouse.sql`](sql/02-load-from-clickhouse.sql) goes
 through the FDW. ClickHouse read the Parquet from Hugging Face in **44 s**, and
-`pg_clickhouse` moved all 38,462 rows into Postgres in **38.9 s**. The
+`pg_clickhouse` moved all 38,462 rows into Postgres in **38.9 s** (39.2 s on
+the 2026-10-02 re-run). The
 alternative — piping Parquet through a text pipeline into `COPY` — managed
 roughly **3,000 rows a minute** in rehearsal, because every float becomes a
 decimal string. Same data, thirteen minutes instead of thirty-nine seconds.
@@ -273,9 +319,13 @@ Managed Postgres 카탈로그에는 벡터 확장이 **셋** 올라와 있습니
 
 | 확장 | 카탈로그 | 실제 서비스 | |
 |---|---|---|---|
-| `vector` | 0.8.2 | **0.8.5, 설치·동작** | pgvector — `hnsw`, `ivfflat` |
+| `vector` | 0.8.6 | **0.8.6, 설치·동작** | pgvector — `hnsw`, `ivfflat` |
 | `vchord` | 1.1.1 | ❌ **생성 불가** | VectorChord — `shared_preload_libraries` 필요 |
 | `vchord_bm25` | 0.3.0 | ❌ 같은 이유 | BM25를 접근 방법으로 |
+
+카탈로그는 2026-10-01에, 서비스는 2026-10-02에 확인했습니다. 2026-08-23에는
+카탈로그에 `vector` 0.8.2가 올라 있었고 서비스에는 0.8.5가 설치됐습니다. `vchord`는
+두 번 모두 같은 이유로 실패했습니다.
 
 ```text
 postgres=> CREATE EXTENSION vchord;
@@ -295,10 +345,11 @@ ERROR:  ALTER SYSTEM is not allowed in this environment
 빠른가"가 아니라 **선이 어디인가**입니다 — 벡터 검색은 어느 규모부터 Postgres의
 일이 아니게 되며, VectorChord는 그 선을 옮기는가.
 
-> **상태: 2026-08-23에 두 실제 제품에서 끝까지 실행했습니다.**
-> ClickHouse Managed Postgres(PostgreSQL 18.4, pgvector 0.8.5)와 ClickHouse
-> Cloud 26.4.1. 아래에서 단위가 붙은 수치는 전부 거기서 측정한 것이며, 노트북
-> 수치도 벤더 인용도 아닙니다.
+> **상태: 두 실제 제품에서 끝까지 실행했고, 가장 최근은 2026-10-02입니다** —
+> ClickHouse Managed Postgres(PostgreSQL 18.6, pgvector 0.8.6)와 ClickHouse
+> Cloud 26.6.1. 처음 실행은 2026-08-23(PostgreSQL 18.4, pgvector 0.8.5,
+> ClickHouse Cloud 26.4.1)이었고, 아래 표에 두 번 모두 실었습니다. 단위가 붙은
+> 수치는 전부 그 서비스들에서 측정한 것이며, 노트북 수치도 벤더 인용도 아닙니다.
 
 ### pgvector 튜토리얼로 충분하지 않은 이유
 
@@ -336,27 +387,49 @@ Parquet을 HTTPS에서 바로 읽고, Postgres는 `pg_clickhouse`로 ClickHouse�
 ### 실행
 
 ```bash
-cp config.env.example config.env && $EDITOR config.env
+cp config.env.example config.env && $EDITOR config.env   # Postgres는 PG*, ClickHouse는 CH_*
 ```
 
-**ClickHouse에서** — [`clickhouse/01-load-dbpedia.sql`](clickhouse/01-load-dbpedia.sql)을
-SQL 콘솔에 붙여넣습니다. `vec.dbpedia`를 만들고 Hugging Face에서 적재한 뒤
-`vector_similarity` 인덱스를 추가합니다.
+**ClickHouse에서:** [`clickhouse/01-load-dbpedia.sql`](clickhouse/01-load-dbpedia.sql)을 실행합니다. 클라이언트로 돌려도 되고, SQL 콘솔에 붙여 넣어도 됩니다.
+
+```bash
+./scripts/clickhouse.sh < clickhouse/01-load-dbpedia.sql
+```
+
+`mpg_hols_vec.dbpedia`를 만들고 Hugging Face에서 적재한 뒤 `vector_similarity` 인덱스를 추가합니다. 데이터베이스 이름을 전용으로 정해 두었기 때문에, 공용 ClickHouse 서비스에서도 다른 것을 건드리지 않고 돌릴 수 있습니다.
 
 **Postgres에서:**
 
 ```bash
 ./scripts/psql.sh -f /sql/01-schema.sql
-./scripts/psql.sh -v ch_host=… -v ch_pass=… -f /sql/02-load-from-clickhouse.sql
-./scripts/psql.sh -f /sql/03-ground-truth.sql     # 정답셋 + 측정 하네스
+./scripts/psql.sh -f /sql/02-load-from-clickhouse.sql   # config.env의 CH_*를 읽음
+./scripts/psql.sh -f /sql/03-ground-truth.sql           # 정답셋 + 측정 하네스
 
 ./scripts/psql.sh -f /sql/10-pgvector-hnsw.sql
 ./scripts/psql.sh -f /sql/11-pgvector-ivfflat.sql
 ./scripts/psql.sh -f /sql/12-vectorchord.sql
 ```
 
-이어서 [`clickhouse/02-compare.sql`](clickhouse/02-compare.sql)이 ClickHouse
-쪽을 같은 기준으로 측정합니다.
+**다시 ClickHouse에서:** [`clickhouse/02-compare.sql`](clickhouse/02-compare.sql)이 ClickHouse 쪽을 같은 기준으로 측정합니다.
+
+```bash
+./scripts/clickhouse.sh < clickhouse/02-compare.sql
+```
+
+**자격 증명.** 두 스크립트 모두 클라이언트를 컨테이너에서 실행하고, 비밀번호는 명령행이 아니라 환경 변수로 넘깁니다. `02-load`에서는 `-v ch_host=…`, `-v ch_pass=…`로 `config.env` 값을 덮어쓸 수 있습니다.
+
+**공용 ClickHouse 서비스에서는** `mpg_hols_vec`만 다룰 수 있는 사용자를 쓰세요. 아래는 서비스의 `default` 사용자로 실행합니다. 2026-10-02 재실행 때 ClickHouse Cloud 26.6.1에서 실제로 부여한 권한입니다.
+
+```sql
+CREATE USER mpg_hols IDENTIFIED BY '…';
+CREATE DATABASE IF NOT EXISTS mpg_hols_vec;
+GRANT CURRENT GRANTS ON mpg_hols_vec.* TO mpg_hols;        -- Cloud에서는 GRANT ALL을 지원하지 않음
+GRANT CREATE TEMPORARY TABLE ON *.* TO mpg_hols;
+GRANT READ ON URL TO mpg_hols;                             -- Hugging Face Parquet을 읽는 url()
+GRANT SELECT ON system.data_skipping_indices TO mpg_hols;  -- 02-compare의 인덱스 크기
+```
+
+read/write source grant가 꺼진 서버에서는 `URL` 권한을 `GRANT URL ON *.* TO mpg_hols`로 씁니다.
 
 계정이 아직 없다면 `./scripts/local-postgres.sh up`이 두 확장이 든 컨테이너를
 띄웁니다. ClickHouse 비교를 뺀 전부가 거기서 돕니다.
@@ -382,45 +455,50 @@ ClickHouse 쪽은 같은 주의가 다른 지점에서 필요합니다. 정답�
 
 ### 실측 결과
 
-**실제 제품에서** 측정했습니다. ClickHouse Managed Postgres(PostgreSQL 18.4,
-pgvector 0.8.5)와 ClickHouse Cloud 26.4.1에 Parquet 파일 하나 —
-**38,462행 × 1536차원** — 를 양쪽에 적재했습니다. 워밍 후 수치입니다(아래 마지막
-항목 참조).
+**실제 제품에서** 측정했습니다. Parquet 파일 하나 — **38,462행 × 1536차원** — 를 양쪽에 적재했습니다. 모두 워밍 후 수치입니다(아래 마지막 항목 참조).
 
-**Postgres**
+두 번 실행했습니다.
+
+| 실행 | Postgres | ClickHouse |
+|---|---|---|
+| 2026-08-23 | PostgreSQL 18.4, pgvector 0.8.5 | ClickHouse Cloud 26.4.1 |
+| 2026-10-02 | PostgreSQL 18.6, pgvector 0.8.6, `r6gd.large` | ClickHouse Cloud 26.6.1 |
+
+2026-10-02의 Postgres 서비스는 라이브 데모 두 개와 같이 쓰는 서비스였습니다. pg_cron 작업이 1분마다 돌았고 CDC 슬롯 두 개가 활성 상태였습니다.
+
+**Postgres** — 각 칸은 *2026-08-23 / 2026-10-02*
 
 | 방법 | 빌드 | recall@10 | ms / 쿼리 | 인덱스 크기 |
 |---|---|---|---|---|
-| 완전탐색, 인덱스 없음 | — | 1.000 | **375.1** | — (테이블 322 MB) |
-| `hnsw`, `ef_search=20` | 68.4초 | 0.975 | **0.99** | 300 MB |
-| `hnsw`, `ef_search=40` | 〃 | 0.975 | 1.45 | 300 MB |
-| `hnsw`, `ef_search=100` | 〃 | 0.980 | 2.90 | 300 MB |
-| `ivfflat`, `probes=1` | 11.4초 | 0.700 | 1.05 | 301 MB |
-| `ivfflat`, `probes=10` | 〃 | 0.975 | 7.33 | 301 MB |
-| `ivfflat`, `probes=30` | 〃 | 0.995 | 21.44 | 301 MB |
-| VectorChord | — | — | — | **사용 불가** |
+| 완전탐색, 인덱스 없음 | — | 1.000 / 1.000 | **375.1** / 376.0 | — (테이블 322 MB / 322 MB) |
+| `hnsw`, `ef_search=20` | 68.4초 / 67.0초 | 0.975 / 0.990 | **0.99** / 0.98 | 300 MB / 300 MB |
+| `hnsw`, `ef_search=40` | 〃 | 0.975 / 0.990 | 1.45 / 1.50 | 〃 |
+| `hnsw`, `ef_search=100` | 〃 | 0.980 / 0.990 | 2.90 / 2.91 | 〃 |
+| `ivfflat`, `probes=1` | 11.4초 / 11.1초 | 0.700 / 0.740 | 1.05 / 1.12 | 301 MB / 301 MB |
+| `ivfflat`, `probes=10` | 〃 | 0.975 / 0.970 | 7.33 / 8.15 | 〃 |
+| `ivfflat`, `probes=30` | 〃 | 0.995 / 0.990 | 21.44 / 22.08 | 〃 |
+| VectorChord | — | — | — | 두 번 모두 **사용 불가** |
 
 **ClickHouse**, 같은 행, `vector_similarity('hnsw','cosineDistance',1536,'bf16',16,64)`
 
-| | |
-|---|---|
-| Hugging Face에서 적재 | 44초 |
-| 인덱스 빌드 | 29초 |
-| 저장 | 디스크 305.9 MiB — 데이터 215.3 MiB + **인덱스 90.6 MiB** |
-| recall@10 | 0.985 |
-| 서버 측 지연 | **약 530 ms**, 38,462행 중 25,880행을 읽음 |
+| | 2026-08-23 (26.4.1) | 2026-10-02 (26.6.1) |
+|---|---|---|
+| Hugging Face 적재 + 인덱스 빌드 | 44초 + 29초 | `01-load` 전체 53초 |
+| 저장 | 디스크 305.9 MiB — 데이터 215.3 MiB + **인덱스 90.6 MiB** | 305.87 MiB — 데이터 215.33 MiB + **인덱스 90.54 MiB** |
+| recall@10, `ef_search=64` | 0.985 | 0.985 |
+| `EXPLAIN indexes=1` | granule 24 → 6 | granule 24 → 6 |
+| 서버 측 지연 | **약 530 ms**, 38,462행 중 25,880행을 읽음 | 재측정 안 함 |
 
 네 가지가 나오는데, 넷 다 흔히 예상하는 것과 다릅니다.
 
-**같은 recall에서 HNSW가 IVFFlat보다 5배 빠릅니다.** 둘 다 0.975에 도달하는데
-`ef_search=40`이 1.45ms, `probes=10`이 7.33ms입니다. IVFFlat을 0.995까지 밀면
-21.44ms가 들고, 그쯤이면 인덱스가 제 값을 못 합니다. HNSW는 그 대가로 6배 긴
-빌드 시간을 냈습니다.
+**같은 recall에서 HNSW가 IVFFlat보다 5배 빠릅니다.** 첫 실행에서 둘 다 0.975에 도달했는데, `ef_search=40`이 1.45ms, `probes=10`이 7.33ms였습니다. IVFFlat을 0.995까지 밀면 21.44ms가 들었고, 그쯤이면 인덱스가 제 값을 못 합니다. HNSW는 그 대가로 6배 긴 빌드 시간을 냈습니다.
+
+재실행에서는 차이가 더 벌어졌습니다. HNSW는 0.98ms에 0.990에 도달했고, IVFFlat은 같은 recall에 `probes=30`과 22.08ms가 필요했습니다.
 
 **ClickHouse 벡터 인덱스는 이 규모에서 경쟁이 안 되고, 실행 계획이 이유를
 말해줍니다.** `EXPLAIN indexes=1`을 보면 인덱스는 동작합니다 — granule을 24개에서
-6개로 프루닝합니다. 그런데도 38,462행 중 25,880행을 읽고 서버 측 약 530ms가
-걸립니다. 기본값 `GRANULARITY 100000000` 때문에 작은 파트에는 인덱스 인스턴스가
+6개로 프루닝합니다. 그런데도 2026-08-23에는 38,462행 중 25,880행을 읽고 서버 측
+약 530ms가 걸렸습니다. 기본값 `GRANULARITY 100000000` 때문에 작은 파트에는 인덱스 인스턴스가
 거의 만들어지지 않아 프루닝이 거칩니다. Postgres의 0.99ms와 견줄 상황이
 아닙니다. **38,000행에서 벡터는 Postgres에 있어야 하고**, "선이 어디인가"라는 이
 랩의 질문은 하한을 얻었습니다 — 여기보다 한참 위입니다.
@@ -430,14 +508,24 @@ pgvector 0.8.5)와 ClickHouse Cloud 26.4.1에 Parquet 파일 하나 —
 ClickHouse의 `bf16` 인덱스는 같은 데이터에 90.6 MiB입니다. 그리고 임베딩 자체는
 거의 압축되지 않습니다 — 239.5 MiB에서 215.3 MiB, 약 10%입니다. 고르게 분포한
 실수에는 코덱이 찾아낼 규칙이 없기 때문입니다. 10억 개를 담는 엔진이 어디든 그
-값은 치러야 합니다.
+값은 치러야 합니다. (컬럼별 수치는 2026-08-23 것입니다. ClickHouse Cloud 26.6.1은
+컬럼별 크기를 더 이상 보고하지 않습니다 — 아래 참조.)
 
 **첫 측정은 틀립니다.** 로컬 컨테이너 예행연습에서 HNSW가 5.6ms로 나왔는데,
 워밍 후 수치의 3배였습니다. 인덱스를 갓 만들어 페이지 캐시가 비어 있었기
 때문입니다. 위 수치는 전부 워밍 후입니다. 어느 쪽인지 밝히지 않는 벤치마크는
 필요한 것을 말해주지 않는 벤치마크입니다.
 
-### 물릴 만한 것 여섯 가지
+### 물릴 만한 것 여덟 가지
+
+**상관 서브쿼리로 쓴 recall 쿼리가 26.4 이후 동작하지 않습니다.** 처음 `02-compare.sql`은 질의 스무 개를 한 문장으로 채점했습니다. 질의마다 `ORDER BY … LIMIT 10` 안에서 바깥의 `q.embedding`을 참조하는 형태였습니다. 26.4.1에서는 돌았지만 이후 버전은 거부합니다.
+
+- 로컬 26.5.7, 26.6.8, 26.9.7: `Code: 48 … Correlated subqueries are not supported in JOINs yet`
+- Cloud 26.6.1: `UNSUPPORTED_METHOD`. `allow_experimental_correlated_subqueries`를 켜라고 합니다.
+
+실험 설정을 켜는 대신, 지금 파일은 질의 스무 개를 하나씩 펼쳐 씁니다. 각 질의는 기준 벡터를 상수 스칼라 서브쿼리로 받고, 벡터 인덱스는 그대로 쓰입니다. `EXPLAIN`에서 granule이 24개에서 6개로 줄어듭니다.
+
+**ClickHouse Cloud는 컬럼별 크기를 보고하지 않습니다.** 26.6.1에서는 `system.columns`와 `system.parts_columns` 모두 모든 컬럼을 `0.00 B`로 보여 줍니다. `system.tables.total_bytes`는 값이 채워져 있는데, 벡터 인덱스가 포함된 값입니다. Postgres 테이블 크기와 비교하기 전에 인덱스를 빼세요.
 
 **HTTPS 인터페이스로는 `SET`을 함께 보낼 수 없습니다.** ClickHouse Cloud의 HTTP
 엔드포인트는 다중 문장 본문을 거부합니다 —
@@ -486,15 +574,16 @@ device`로 죽습니다. `--shm-size=2g`로 띄우거나
 
 | | |
 |---|---|
-| ✅ 실제 제품에서 검증 | `vchord` 생성 불가와 `ALTER SYSTEM` 거부, `url()`로 ClickHouse Cloud에 HF Parquet 적재, `vector_similarity` 인덱스와 실행 계획, `pg_clickhouse`로 Managed Postgres에 끌어오기, pgvector `hnsw`·`ivfflat`의 빌드·크기·recall·지연, 위 표의 모든 수치 |
-| ❌ 막힘 (건너뛴 것이 아님) | **VectorChord.** 패키지는 있고 `shared_preload_libraries`에만 빠져 있어 나중에 풀릴 수 있으므로 `sql/12-vectorchord.sql`은 남겨둡니다 |
+| ✅ 실제 제품에서 검증 | 2026-08-23에 실행하고 2026-10-02에 다시 실행: `vchord` 생성 불가, `url()`로 ClickHouse Cloud에 HF Parquet 적재, `vector_similarity` 인덱스와 실행 계획, `pg_clickhouse`로 Managed Postgres에 끌어오기, pgvector `hnsw`·`ivfflat`의 빌드·크기·recall·지연, `ef_search=64`에서의 ClickHouse recall, 위 표에서 따로 표시한 것을 뺀 모든 수치. `ALTER SYSTEM` 거부는 2026-08-23에만 확인 |
+| ❌ 막힘 (건너뛴 것이 아님) | **VectorChord.** 패키지는 있고 `shared_preload_libraries`에만 빠져 있어 나중에 풀릴 수 있으므로 `sql/12-vectorchord.sql`은 남겨둡니다. 확장이 없으면 지금 이 파일은 멈추지 않고 VectorChord라는 이름으로 완전탐색 결과를 찍습니다 ([#13](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/13)) |
 | ❌ 미실행 | 100만 행 전체. 26개 중 Parquet 1개만 사용 |
 | ❌ 미작성 | `vchord_bm25` 하이브리드 단계 — 어차피 같은 이유로 막혀 있음 |
 
 적재 경로도 측정했고, 그것이
 [`sql/02-load-from-clickhouse.sql`](sql/02-load-from-clickhouse.sql)이 FDW를
 쓰는 이유입니다. ClickHouse가 Hugging Face에서 **44초**에 읽었고,
-`pg_clickhouse`가 38,462행 전부를 Postgres로 **38.9초**에 옮겼습니다. 대안인
+`pg_clickhouse`가 38,462행 전부를 Postgres로 **38.9초**에 옮겼습니다(2026-10-02
+재실행에서는 39.2초). 대안인
 Parquet→텍스트 파이프라인→`COPY`는 예행연습에서 **분당 약 3,000행**이었습니다 —
 모든 float이 십진 문자열이 되기 때문입니다. 같은 데이터로 39초 대신 13분입니다.
 
