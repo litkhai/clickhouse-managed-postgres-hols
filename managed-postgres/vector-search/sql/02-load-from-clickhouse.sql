@@ -1,5 +1,11 @@
 -- Pull the embeddings from ClickHouse into Postgres.
 --
+--   ./scripts/psql.sh -f /sql/02-load-from-clickhouse.sql
+--
+-- The ClickHouse connection comes from CH_HOST, CH_PORT, CH_USER, CH_PASSWORD and
+-- CH_DATABASE in config.env (see _clickhouse-vars.sql), so the password stays out
+-- of the command line and out of `ps`. -v still works and wins:
+--
 --   ./scripts/psql.sh -v ch_host=xxx.clickhouse.cloud -v ch_pass='...' \
 --       -f /sql/02-load-from-clickhouse.sql
 --
@@ -13,18 +19,11 @@
 -- every row carries ~20 KB of text. A million rows that way is not an
 -- afternoon.
 
-\if :{?ch_host}
+\ir _clickhouse-vars.sql
+-- \quit inside an included file only ends that file, so check the outcome here.
+\if :{?ch_vars_ok}
 \else
-  \echo 'set -v ch_host=... -v ch_pass=...  (optionally -v ch_user=default -v ch_db=vec)'
   \quit
-\endif
-\if :{?ch_user}
-\else
-  \set ch_user default
-\endif
-\if :{?ch_db}
-\else
-  \set ch_db vec
 \endif
 
 CREATE EXTENSION IF NOT EXISTS pg_clickhouse;
@@ -33,7 +32,7 @@ DROP SERVER IF EXISTS vec_ch_svr CASCADE;
 
 CREATE SERVER vec_ch_svr
     FOREIGN DATA WRAPPER clickhouse_fdw
-    OPTIONS (host :'ch_host', port '9440', dbname :'ch_db',
+    OPTIONS (host :'ch_host', port :'ch_port', dbname :'ch_db',
              secure 'true', driver 'binary');
 
 CREATE USER MAPPING FOR CURRENT_USER

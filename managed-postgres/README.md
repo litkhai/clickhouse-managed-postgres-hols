@@ -8,8 +8,8 @@
 
 > **Status: in progress.** Three labs are written and were verified against a
 > live service:
-> - [`provisioning/`](provisioning/) and [`postgis-fdw-bike/`](postgis-fdw-bike/) on 2026-08-15
-> - [`vector-search/`](vector-search/) on 2026-08-23
+> - [`provisioning/`](provisioning/) and [`vector-search/`](vector-search/) on 2026-10-02. Creating and deleting a service through the provisioning scripts is still unverified ([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
+> - [`postgis-fdw-bike/`](postgis-fdw-bike/) on 2026-08-15, against pg_clickhouse 0.3. A re-run is pending ([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)).
 >
 > The remaining areas below are drafted from the product documentation and not
 > written yet.
@@ -67,8 +67,8 @@ verified against a running instance before it is written down.
 ## 한국어
 
 > **상태: 진행 중.** 랩 세 개를 작성했고 실제 서비스로 검증했습니다:
-> - [`provisioning/`](provisioning/)과 [`postgis-fdw-bike/`](postgis-fdw-bike/)는 2026-08-15
-> - [`vector-search/`](vector-search/)는 2026-08-23
+> - [`provisioning/`](provisioning/)과 [`vector-search/`](vector-search/)는 2026-10-02. provisioning 스크립트로 서비스를 만들고 지우는 부분은 아직 검증하지 않았습니다([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
+> - [`postgis-fdw-bike/`](postgis-fdw-bike/)는 2026-08-15, pg_clickhouse 0.3 기준. 재실행이 남아 있습니다([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)).
 >
 > 아래 나머지 영역은 제품 문서를 보고 잡은 초안이며 아직 작성하지 않았습니다.
 
