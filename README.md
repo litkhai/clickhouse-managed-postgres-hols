@@ -38,7 +38,12 @@ Current state and what still needs a re-run: [STATUS.md](STATUS.md).
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
 ./.github/scripts/check_syntax.sh
+python3 tools/labs_json.py --check
 ```
+
+`docs/labs.json` lists the labs whose `lab.yaml` sets `web: true`, for the notes site, which
+fetches it from `main`. Keys and categories: [`tools/lab.schema.md`](tools/lab.schema.md).
+After changing a `lab.yaml`, run `python3 tools/labs_json.py` and commit the file.
 
 ### 📝 License
 
@@ -82,7 +87,12 @@ ClickHouse Managed Postgres와 `pg_clickhouse` 확장 실습 모음입니다. �
 git config core.hooksPath .githooks
 python3 .github/scripts/check_links.py
 ./.github/scripts/check_syntax.sh
+python3 tools/labs_json.py --check
 ```
+
+`docs/labs.json`에는 `lab.yaml`에 `web: true`가 있는 실습만 담기며, 노트 사이트가 `main`에서
+가져갑니다. 키와 분류는 [`tools/lab.schema.md`](tools/lab.schema.md). `lab.yaml`을 바꾼 뒤
+`python3 tools/labs_json.py`를 실행하고 그 파일을 커밋하세요.
 
 ### 📝 라이선스
 
