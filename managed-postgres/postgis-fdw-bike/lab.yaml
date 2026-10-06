@@ -1,0 +1,7 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-06
+web: true
+title_ko: "PostGIS + pg_clickhouse: 서울 공공자전거"
+summary_ko: "지리 연산은 Postgres에 두고 집계는 pg_clickhouse로 ClickHouse에 보내, 2,400만 행 대여 기록에서 어느 쪽이 답했는지 비교합니다."
+title_en: "PostGIS + pg_clickhouse: Seoul public bike"
+summary_en: "Keep geography in Postgres and push the counting to ClickHouse through pg_clickhouse, then compare which side answered over 24M trips."
+category: feature
