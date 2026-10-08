@@ -5,3 +5,4 @@ summary_ko: "지리 연산은 Postgres에 두고 집계는 pg_clickhouse로 Clic
 title_en: "PostGIS + pg_clickhouse: Seoul public bike"
 summary_en: "Keep geography in Postgres and push the counting to ClickHouse through pg_clickhouse, then compare which side answered over 24M trips."
 category: feature
+tags: [postgres, geo]

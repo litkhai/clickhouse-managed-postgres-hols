@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "pg_clickhouse: PostgreSQL에서 ClickHouse 조회하기"
+summary_ko: "Docker만으로 PostgreSQL과 ClickHouse를 띄워 pg_clickhouse 확장을 설치하고, 외부 스키마 가져오기, JOIN·집계 푸시다운, clickhouse_query와 딕셔너리 사용을 차례로 실습합니다."
+title_en: "pg_clickhouse: querying ClickHouse from PostgreSQL"
+summary_en: "With only Docker, run PostgreSQL and ClickHouse side by side, install the pg_clickhouse extension, import foreign schemas, watch JOIN and aggregate pushdown, and send ClickHouse SQL with clickhouse_query."
+category: feature
+tags: [postgres]
