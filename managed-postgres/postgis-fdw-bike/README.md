@@ -9,6 +9,8 @@ per query, which side actually answered.
 
 ## English
 
+> **Related notes** (Korean): [pg_clickhouse — PostgreSQL에서 ClickHouse 사용하기](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-postgresql-clickhouse/) · [ClickHouse의 PostGIS 대체 가능성](https://clickhouse.litkhai.dev/articles/case-study/clickhouse-postgis/)
+
 **The claim:** you do not have to choose between Postgres and ClickHouse. Keep
 the geography in Postgres, send only the counting to ClickHouse, and neither
 side does the thing it is bad at.
@@ -287,6 +289,8 @@ redistributed here; `fetch-data.sh` pulls it from 서울 열린데이터광장 u
 ---
 
 ## 한국어
+
+> **관련 글**: [pg_clickhouse — PostgreSQL에서 ClickHouse 사용하기](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-postgresql-clickhouse/) · [ClickHouse의 PostGIS 대체 가능성](https://clickhouse.litkhai.dev/articles/case-study/clickhouse-postgis/)
 
 **주장:** Postgres냐 ClickHouse냐를 고를 필요가 없습니다. 지리는 Postgres에 두고
 집계만 ClickHouse로 보내면, 양쪽 모두 잘 못하는 일을 하지 않습니다.

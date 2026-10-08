@@ -6,6 +6,8 @@
 
 ## English
 
+> **Related notes** (Korean): [pg_clickhouse — PostgreSQL에서 ClickHouse 사용하기](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-postgresql-clickhouse/)
+
 A self-contained lab that needs only Docker. It demonstrates the official **`pg_clickhouse`** PostgreSQL extension end to end.
 
 PostgreSQL 18 with pg_clickhouse 0.11.0 and ClickHouse 26.9.7.9 run together on a private Docker network. You install the extension, register a foreign server, import schemas, observe pushdown, and send ClickHouse SQL directly with `clickhouse_query()` / `clickhouse_perform()`. Nothing is installed on your host.
@@ -278,6 +280,8 @@ For questions or issues, see the [repository README](../../README.md).
 ---
 
 ## 한국어
+
+> **관련 글**: [pg_clickhouse — PostgreSQL에서 ClickHouse 사용하기](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-postgresql-clickhouse/)
 
 도커만 있으면 되는 자급자족 랩입니다. 공식 **`pg_clickhouse`** PostgreSQL 익스텐션을 처음부터 끝까지 실습합니다.
 
