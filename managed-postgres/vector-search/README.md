@@ -6,6 +6,8 @@
 
 ## English
 
+> **Related notes** (Korean): [ClickHouse Vector Search (25.8)](https://clickhouse.litkhai.dev/articles/feature/clickhouse-vector-search-25-8/)
+
 Managed Postgres lists **three** vector extensions. Only one of them can
 actually be used, and finding that out is the first result this lab produced.
 
@@ -313,6 +315,8 @@ are not redistributed here.
 ---
 
 ## 한국어
+
+> **관련 글**: [ClickHouse Vector Search (25.8)](https://clickhouse.litkhai.dev/articles/feature/clickhouse-vector-search-25-8/)
 
 Managed Postgres 카탈로그에는 벡터 확장이 **셋** 올라와 있습니다. 그중 실제로
 쓸 수 있는 것은 하나뿐이고, 그 사실을 알아낸 것이 이 랩의 첫 번째 결과입니다.

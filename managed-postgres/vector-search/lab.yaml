@@ -1,0 +1,8 @@
+# Publishing keys (tools/lab.schema.md) — published 2026-10-08
+web: true
+title_ko: "벡터 검색: pgvector, VectorChord, ClickHouse"
+summary_ko: "Managed Postgres의 pgvector와 ClickHouse Cloud의 vector_similarity 인덱스로 같은 벡터를 색인해, 벡터 검색이 어느 규모부터 Postgres를 벗어나야 하는지 측정합니다."
+title_en: "Vector search: pgvector, VectorChord and ClickHouse"
+summary_en: "Index the same vectors with pgvector on Managed Postgres and the vector_similarity index in ClickHouse Cloud, and measure where vector search stops belonging in Postgres; VectorChord cannot be created on the service."
+category: feature
+tags: [vector-search, postgres, benchmark]
