@@ -1,7 +1,7 @@
 -- Five aggregates that belong on ClickHouse.
 --
 --   ./scripts/psql.sh -f /sql/20-aggregate-pushdown.sql                 -- local
---   ./scripts/psql.sh -v target=ch_bike -f /sql/20-aggregate-pushdown.sql -- remote
+--   ./scripts/psql.sh -v target=ch -f /sql/20-aggregate-pushdown.sql    -- remote
 --
 -- The tables are referenced unqualified and the schema is chosen by search_path,
 -- so the identical file runs against the local tables or against the foreign

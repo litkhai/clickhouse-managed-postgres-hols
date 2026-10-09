@@ -35,5 +35,3 @@ Tracked as issues — [all open](https://github.com/litkhai/clickhouse-managed-p
 
 - [Re-verify postgis-fdw-bike on pg_clickhouse 0.10+](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)
 - [provisioning: run the create/delete scripts against the live API](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)
-- [postgis-fdw-bike: script and doc defects found while reading](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/12)
-- [vector-search: claims that disagree with the scripts or each other](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/13)

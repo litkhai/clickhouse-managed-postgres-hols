@@ -66,7 +66,8 @@ FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-te
 -- The ClickHouse side of the comparison
 -- --------------------------------------------------------------------------
 --
--- A vector similarity index, HNSW backed by usearch. Available from 26.4.
+-- A vector similarity index, HNSW backed by usearch. Experimental from 24.8
+-- (ClickHouse#63675), GA in 25.8 (the 25.8 changelog).
 --
 --   parameters: method, metric, dimensions, quantization, M, ef_construction
 --

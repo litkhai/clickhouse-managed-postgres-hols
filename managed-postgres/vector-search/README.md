@@ -34,7 +34,8 @@ and you cannot change it. **Being in the extension catalogue is not the same as
 being usable** — worth knowing before you plan an architecture around it.
 
 Alongside them, ClickHouse has had a `vector_similarity` index — HNSW backed
-by usearch — since 26.4. So the same million vectors can be indexed three ways
+by usearch — since 24.8 ([#63675](https://github.com/ClickHouse/ClickHouse/pull/63675)), experimental at first and GA since
+[25.8](https://clickhouse.com/docs/whats-new/changelog/2025#258). So the same million vectors can be indexed three ways
 in Postgres and a fourth way in ClickHouse, and the question this lab answers
 is not "which is fastest" but **where the line is**: at what size does vector
 search stop belonging in Postgres, and does VectorChord move that line?
@@ -127,8 +128,11 @@ GRANT SELECT ON system.data_skipping_indices TO mpg_hols;  -- the index size in 
 On a server without read/write source grants, the `URL` grant is written `GRANT URL ON *.* TO mpg_hols`.
 
 No cloud account yet? `./scripts/local-postgres.sh up` starts a container with
-both extensions, and everything except the ClickHouse comparison works against
-it.
+pgvector and VectorChord, but not `pg_clickhouse`: its extension directory holds
+`vector` and `vchord` only (checked 2026-10-10). So
+`sql/02-load-from-clickhouse.sql`, the only load path in this lab, cannot run
+against it, and `vec.dbpedia` has to be filled some other way before the index
+files are worth running there.
 
 ### Measuring it honestly
 
@@ -213,7 +217,8 @@ per-column figure is from 2026-08-23; ClickHouse Cloud 26.6.1 no longer reports
 per-column sizes, see below.)
 
 **The first measurement you take is wrong.** A rehearsal of this comparison on
-a local container put HNSW at 5.6 ms, three times its warm number, because the
+a local container put HNSW at 5.6 ms, three times its warm number on the same
+container (1.79 ms), because the
 index had just been built and the page cache was empty. Every figure above is
 from a warm run. A benchmark that does not say which is not telling you the
 thing you need.
@@ -343,8 +348,9 @@ ERROR:  ALTER SYSTEM is not allowed in this environment
 사용자가 바꿀 수 없습니다. **확장 카탈로그에 있다는 것과 쓸 수 있다는 것은 다른
 얘기입니다** — 그것을 전제로 아키텍처를 짜기 전에 알아둘 만합니다.
 
-그 옆에서 ClickHouse는 26.4부터 usearch 기반 HNSW인 `vector_similarity`
-인덱스를 갖고 있습니다. 같은 100만 벡터를 Postgres에서 세 가지로, ClickHouse에서
+그 옆에서 ClickHouse는 24.8([#63675](https://github.com/ClickHouse/ClickHouse/pull/63675))부터 usearch 기반 HNSW인
+`vector_similarity` 인덱스를 갖고 있습니다. 처음엔 실험 기능이었고
+[25.8](https://clickhouse.com/docs/whats-new/changelog/2025#258)에서 GA가 됐습니다. 같은 100만 벡터를 Postgres에서 세 가지로, ClickHouse에서
 네 번째 방식으로 색인할 수 있다는 뜻이고, 이 랩이 답하는 질문은 "무엇이 제일
 빠른가"가 아니라 **선이 어디인가**입니다 — 벡터 검색은 어느 규모부터 Postgres의
 일이 아니게 되며, VectorChord는 그 선을 옮기는가.
@@ -435,8 +441,11 @@ GRANT SELECT ON system.data_skipping_indices TO mpg_hols;  -- 02-compare의 인�
 
 read/write source grant가 꺼진 서버에서는 `URL` 권한을 `GRANT URL ON *.* TO mpg_hols`로 씁니다.
 
-계정이 아직 없다면 `./scripts/local-postgres.sh up`이 두 확장이 든 컨테이너를
-띄웁니다. ClickHouse 비교를 뺀 전부가 거기서 돕니다.
+계정이 아직 없다면 `./scripts/local-postgres.sh up`이 pgvector와 VectorChord가
+든 컨테이너를 띄웁니다. `pg_clickhouse`는 없습니다. 확장 디렉터리에 `vector`와
+`vchord`만 있습니다(2026-10-10 확인). 그래서 이 랩의 유일한 적재 경로인
+`sql/02-load-from-clickhouse.sql`은 거기서 돌지 않고, 인덱스 파일을 돌리기 전에
+`vec.dbpedia`를 다른 방법으로 채워야 합니다.
 
 ### 정직하게 측정하기
 
@@ -516,7 +525,7 @@ ClickHouse의 `bf16` 인덱스는 같은 데이터에 90.6 MiB입니다. 그리�
 컬럼별 크기를 더 이상 보고하지 않습니다 — 아래 참조.)
 
 **첫 측정은 틀립니다.** 로컬 컨테이너 예행연습에서 HNSW가 5.6ms로 나왔는데,
-워밍 후 수치의 3배였습니다. 인덱스를 갓 만들어 페이지 캐시가 비어 있었기
+같은 컨테이너의 워밍 후 수치(1.79ms)의 3배였습니다. 인덱스를 갓 만들어 페이지 캐시가 비어 있었기
 때문입니다. 위 수치는 전부 워밍 후입니다. 어느 쪽인지 밝히지 않는 벤치마크는
 필요한 것을 말해주지 않는 벤치마크입니다.
 

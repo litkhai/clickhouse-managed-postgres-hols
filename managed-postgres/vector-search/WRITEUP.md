@@ -25,8 +25,11 @@ So the lab was designed to find a number, not to declare a winner.
 
 ### 2. Why the premise changed before any measurement
 
-ClickHouse Managed Postgres publishes an extension catalogue of about 95
-entries, and three of them are vector-related:
+ClickHouse Managed Postgres publishes an
+[extension catalogue](https://clickhouse.com/docs/cloud/managed-postgres/extensions) of 95 entries, counted
+2026-10-10. The server's own `pg_available_extensions` is a different list; the
+[bike lab](../postgis-fdw-bike/WRITEUP.md) counted 101 there. Three catalogue
+entries are vector-related:
 
 | | |
 |---|---|
@@ -243,7 +246,7 @@ not a compromise.
 Both worth a paragraph in an article, because both look like data.
 
 **Cold caches.** A rehearsal on a container put HNSW at 5.6 ms per query. The
-warm number is 1.79 ms. The index had just been built and nothing was in the
+warm number on the same container was 1.79 ms. The index had just been built and nothing was in the
 page cache. Three times wrong, and nothing about the output says so — the
 figure is real, it just answers a question nobody asked. A benchmark that does
 not state whether it was warm is not telling you the thing you need.
@@ -312,8 +315,10 @@ Postgres입니다 — 데이터가 이미 거기 있고, 나머지 스키마와�
 
 ### 2. 측정을 시작하기도 전에 전제가 바뀐 이유
 
-ClickHouse Managed Postgres는 약 95개 확장을 공개하고, 그중 셋이 벡터
-관련입니다.
+ClickHouse Managed Postgres는 [확장 카탈로그](https://clickhouse.com/docs/cloud/managed-postgres/extensions)에
+95개를 공개합니다(2026-10-10에 셈). 서버의 `pg_available_extensions`는 다른
+목록이고, [자전거 랩](../postgis-fdw-bike/WRITEUP.md)은 거기서 101개를 셌습니다.
+카탈로그 항목 중 셋이 벡터 관련입니다.
 
 | | |
 |---|---|
@@ -517,8 +522,8 @@ ClickHouse 테이블의 파트 수, 인덱스에 준 granularity, 작업집합�
 
 둘 다 데이터처럼 보이기 때문에 글에 한 문단씩 넣을 만합니다.
 
-**차가운 캐시.** 컨테이너 예행연습에서 HNSW가 쿼리당 5.6ms로 나왔습니다. 워밍 후
-수치는 1.79ms입니다. 인덱스를 갓 만들어 페이지 캐시가 비어 있었습니다. 3배
+**차가운 캐시.** 컨테이너 예행연습에서 HNSW가 쿼리당 5.6ms로 나왔습니다. 같은
+컨테이너에서 워밍 후 수치는 1.79ms였습니다. 인덱스를 갓 만들어 페이지 캐시가 비어 있었습니다. 3배
 틀렸는데 출력 어디에도 그 사실이 없습니다 — 수치는 진짜이고, 다만 아무도 묻지
 않은 질문에 답할 뿐입니다. 워밍 여부를 밝히지 않는 벤치마크는 필요한 것을
 말해주지 않는 벤치마크입니다.

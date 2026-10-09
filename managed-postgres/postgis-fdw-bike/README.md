@@ -69,9 +69,12 @@ already replicated into it by ClickPipes):
 ./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
 ```
 
-`psql` runs in a container, so nothing needs installing. Output masks the
-hostname, which carries the service name and id. Credentials live in a
-gitignored `config.env` — this repository is public.
+`psql` runs in a container, so nothing needs installing. The hostname carries
+the service name and id, so `psql.sh` masks it and the server IP in everything
+it prints, and the other scripts mask them in their status lines and in psql's
+errors. An interactive `./scripts/psql.sh` session, with no arguments, is not
+masked. Credentials live in a gitignored `config.env` — this
+repository is public.
 
 ### The dashboard
 
@@ -253,7 +256,7 @@ scripts/load-stations.sh      xlsx → PostGIS, geometry + GiST index
 scripts/load-trips.sh         CP949 → UTF-8, KST → UTC, staged then cast
 scripts/backfill-trips.sh     fill missing days
 scripts/catch-up.sh           fill the hours since the newest trip
-scripts/shift-to-utc.sh       one-off conversion, primary-key batches
+scripts/shift-to-utc.sh       one-off KST → UTC for data loaded before 2026-08-15
 scripts/generate-trips.sh     client-side live feed
 scripts/explain-pushdown.sh   did it push down?
 scripts/psql.sh               psql in a container
@@ -350,8 +353,10 @@ ln -s ../provisioning/config.env config.env   # 또는 config.env.example 작성
 ```
 
 `psql`은 컨테이너로 실행하므로 설치할 게 없습니다. 호스트명에 서비스 이름과 id가
-들어 있어 출력은 마스킹됩니다. 자격증명은 gitignore된 `config.env`에 둡니다 — 이
-저장소는 공개입니다.
+들어 있어 `psql.sh`는 출력 전체에서 호스트명과 서버 IP를 가리고, 나머지
+스크립트는 상태 줄과 psql 오류 메시지에서 가립니다. 인자 없이 연 대화형
+`./scripts/psql.sh` 세션은 가리지 않습니다. 자격증명은
+gitignore된 `config.env`에 둡니다 — 이 저장소는 공개입니다.
 
 ### 대시보드
 
@@ -529,7 +534,7 @@ scripts/load-stations.sh      xlsx → PostGIS, 지오메트리 + GiST 인덱스
 scripts/load-trips.sh         CP949 → UTF-8, KST → UTC, 스테이징 후 캐스팅
 scripts/backfill-trips.sh     빠진 날짜 채우기
 scripts/catch-up.sh           최신 대여 이후 시각 단위 공백 채우기
-scripts/shift-to-utc.sh       1회 변환, PK 구간 단위
+scripts/shift-to-utc.sh       2026-08-15 이전에 적재한 데이터의 1회 KST → UTC 변환
 scripts/generate-trips.sh     클라이언트 측 실시간 피드
 scripts/explain-pushdown.sh   푸시다운 됐나?
 scripts/psql.sh               컨테이너 psql
