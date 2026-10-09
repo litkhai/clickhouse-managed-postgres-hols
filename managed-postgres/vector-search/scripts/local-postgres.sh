@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # A local Postgres with pgvector and VectorChord, for rehearsing without a
-# cloud service. Everything except the ClickHouse comparison runs against it.
+# cloud service. It has no pg_clickhouse, so sql/02-load-from-clickhouse.sql
+# cannot run against it: fill vec.dbpedia some other way first.
 #
 #   ./scripts/local-postgres.sh up      # start, print the config.env to use
 #   ./scripts/local-postgres.sh down

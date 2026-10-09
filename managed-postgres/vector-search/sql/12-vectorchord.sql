@@ -19,6 +19,19 @@
 -- candidates inside each cell are scored against compressed codes and only the
 -- survivors are re-ranked against the full vectors.
 
+-- Stop here when the access method is missing, before anything is dropped or
+-- measured. Without it CREATE INDEX fails, but the recall sweep below would
+-- still run: it would scan the table exactly, with no index at all, and print
+-- the result labelled "vectorchord" — a baseline measurement posing as a
+-- VectorChord one. The hnsw and ivfflat indexes are left in place too.
+SELECT EXISTS (SELECT 1 FROM pg_am WHERE amname = 'vchordrq') AS have_vchordrq \gset
+\if :have_vchordrq
+\else
+  \echo 'vchordrq is not available on this server (CREATE EXTENSION vchord has not succeeded,'
+  \echo 'or vchord is not in shared_preload_libraries). Nothing was dropped or built.'
+  \quit
+\endif
+
 \timing on
 
 DROP INDEX IF EXISTS vec.idx_hnsw;
