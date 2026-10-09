@@ -24,9 +24,11 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE SCHEMA IF NOT EXISTS bikegen;
 
 -- bike.trips is stored in UTC. The source publishes Korean local time, and
--- scripts/shift-to-utc.sh converted it once: a `timestamp without time zone`
--- carrying KST would arrive in ClickHouse meaning something nine hours off,
--- because ClickHouse attaches a timezone to DateTime and Postgres does not.
+-- scripts/load-trips.sh converts it on load (it subtracts nine hours): a
+-- `timestamp without time zone` carrying KST would arrive in ClickHouse
+-- meaning something nine hours off, because ClickHouse attaches a timezone to
+-- DateTime and Postgres does not. scripts/shift-to-utc.sh only converts a
+-- database that was loaded before that change (2026-08-15, e1f9ae5).
 --
 -- So the model below is built from UTC timestamps and the procedure compares
 -- against now() directly. The weekday peaks sit at 23:00 and 09:00 UTC, which
@@ -198,13 +200,26 @@ CREATE OR REPLACE FUNCTION bike.generator_schedule(every interval DEFAULT '1 min
 RETURNS bigint LANGUAGE plpgsql AS $$
 DECLARE v_job bigint; v_seconds int := extract(epoch FROM every)::int;
 BEGIN
+    -- Checked before the old job is dropped, so a bad argument leaves the
+    -- running schedule alone.
+    IF v_seconds < 1 THEN
+        RAISE EXCEPTION 'bike.generator_schedule: interval must be at least 1 second, got %', every;
+    END IF;
     PERFORM bike.generator_unschedule();
     -- pg_cron takes cron syntax by the minute, or "N seconds" for sub-minute.
-    v_job := cron.schedule('bike-generate',
-                           CASE WHEN v_seconds < 60 THEN v_seconds || ' seconds'
-                                ELSE '*/' || greatest(1, v_seconds / 60) || ' * * * *' END,
-                           format('CALL bike.generate_trips(%s, 1.0)',
-                                  greatest(1, v_seconds / 60)));
+    IF v_seconds < 60 THEN
+        -- One tick must insert v_seconds of volume, not a whole minute's. The
+        -- window stays one minute so the timestamps keep their spread, and
+        -- p_scale carries the fraction.
+        v_job := cron.schedule('bike-generate', v_seconds || ' seconds',
+                               format('CALL bike.generate_trips(1, %s)',
+                                      round(v_seconds / 60.0, 4)));
+    ELSE
+        v_job := cron.schedule('bike-generate',
+                               '*/' || greatest(1, v_seconds / 60) || ' * * * *',
+                               format('CALL bike.generate_trips(%s, 1.0)',
+                                      greatest(1, v_seconds / 60)));
+    END IF;
     RETURN v_job;
 END $$;
 
