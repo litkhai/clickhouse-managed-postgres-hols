@@ -149,7 +149,8 @@
 
 ### 단계 6 — 정리와 비용
 - `terraform destroy`, 생성한 DB·사용자·Query API Endpoint 삭제, IP 필터·설정 원상복구, seoul-oltp 스냅샷과 diff(§8).
-- 다음 날: AWS Cost Explorer 태그 `purpose=mpg-lambda-direct`, ClickHouse 사용량 비용(Usage Cost API)에서 실행 시간대의 compute·Data Transfer 줄. Data Transfer 줄이 §2의 미확인(같은 리전 공용 엔드포인트 과금 여부)을 답한다.
+- AWS 비용: Cost Explorer는 쓰지 않는다(소유자 계정에 접근 권한 없음, 2026-10-11). Price List 단가 × 측정한 사용량(요청 수, Billed Duration 합계 GB-s, 로그 수집량, NAT 시간)으로 **추정**하고 추정이라고 표시한다.
+- 다음 날: ClickHouse 사용량 비용(Usage Cost API)에서 실행 시간대의 compute·Data Transfer 줄. Data Transfer 줄이 §2의 미확인(같은 리전 공용 엔드포인트 과금 여부)을 답한다.
 
 ## 6. 측정 정의
 
@@ -247,7 +248,7 @@ managed-postgres/lambda-direct/
 | month at 1M / 10M / 100M requests | fixed | variable | total |
 
 ## Conclusions (facts only)
-## Actual cost (Cost Explorer by tag, ClickHouse usage cost for the run window)
+## Cost of the run (AWS: estimate from Price List × measured usage — no Cost Explorer access; ClickHouse: Usage Cost API for the run window)
 ```
 
 ## 12. 작업 분할 (구현 세션용)
