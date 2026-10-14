@@ -61,7 +61,8 @@ showed:
   aggregates differed only below the `LIMIT` tie and, in every differing row
   inspected, by 0.1 in `round(avg(…), 1)`: ClickHouse's `avg` is a Float64 and
   its `round` sends an exact tie to even (`round(15.25, 1)` = 15.2), while
-  Postgres numeric rounds it away from zero (15.3).
+  Postgres numeric rounds it away from zero (15.3). Reported upstream as
+  [ClickHouse/pg_clickhouse#409](https://github.com/ClickHouse/pg_clickhouse/issues/409).
 - In `sql/20-aggregate-pushdown.sql`, queries 1 and 4 push down. Query 2 joins
   the local stations on purpose and does not. Queries 3 and 5 do not either:
   their Remote SQL only selects columns.
@@ -378,7 +379,8 @@ pg_clickhouse 0.10, pg_cron 1.6, `scripts/clickpipe.sh`로 ClickHouse Cloud 26.6
   같습니다. 대여소 단위 집계 두 개는 `LIMIT` 경계의 동점 행에서만, 그리고 열어 본
   차이 행에서는 모두 `round(avg(…), 1)`의 0.1만 달랐습니다. ClickHouse의 `avg`는
   Float64이고 `round`는 정확히 반인 값을 짝수 쪽으로 보내지만(`round(15.25, 1)` =
-  15.2), Postgres numeric은 0에서 먼 쪽으로 올립니다(15.3).
+  15.2), Postgres numeric은 0에서 먼 쪽으로 올립니다(15.3). upstream에
+  [ClickHouse/pg_clickhouse#409](https://github.com/ClickHouse/pg_clickhouse/issues/409)로 보고했습니다.
 - `sql/20-aggregate-pushdown.sql`에서는 쿼리 1과 4가 푸시다운됩니다. 쿼리 2는
   일부러 로컬 stations와 조인하므로 내려가지 않고, 쿼리 3과 5도 Remote SQL이
   컬럼만 고르므로 내려가지 않습니다.
