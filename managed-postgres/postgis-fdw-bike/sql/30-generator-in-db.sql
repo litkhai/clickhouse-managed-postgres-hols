@@ -231,7 +231,7 @@ END $$;
 
 \echo ''
 \echo 'model built. schedule it with:'
-\echo "  SELECT bike.generator_schedule('1 minute');"
+\echo '  SELECT bike.generator_schedule(''1 minute'');'
 \echo 'watch it with:'
 \echo '  SELECT jobname, schedule, active FROM cron.job;'
 \echo '  SELECT status, start_time, return_message FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5;'

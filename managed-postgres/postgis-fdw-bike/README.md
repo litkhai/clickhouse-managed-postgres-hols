@@ -32,7 +32,7 @@ reach the aggregating side.
    ST_Distance, azimuth                                 join both run here
 ```
 
-**And it works.** Same SQL, both sides, 28-day window over 24M rows:
+**And it works.** Same SQL, both sides, 28-day window over 24M rows (2026-08-15, pg_clickhouse 0.3):
 
 | | plan | rows it moved | time |
 |---|---|---|---|
@@ -41,16 +41,39 @@ reach the aggregating side.
 
 ClickHouse's own `system.query_log` confirms it independently: 24.11M rows read
 *there*, 15 returned. All five aggregates push down, including the
-`extract(hour FROM started_at + interval '9 hours')` the KST filters generate —
-it arrives as `toHour(started_at + 32400)`.
+`extract(hour FROM started_at + interval '9 hours')` the KST filters generate.
+pg_clickhouse 0.3 sent it as `toHour(started_at + 32400)`; 0.10 sends
+`cast(toHour((started_at + INTERVAL 32400 SECOND)), 'Nullable(Int32)')`.
 
-**Verified 2026-08-15** against a live ClickHouse Managed Postgres service in
-`ap-northeast-2`: PostgreSQL 18.4, PostGIS 3.6.4, pg_clickhouse 0.3, pg_cron 1.6.
+**Verified 2026-10-14** end to end on a new ClickHouse Managed Postgres service
+(`r6gd.medium`, `ap-northeast-2`): PostgreSQL 18.6, PostGIS 3.6.4, pg_clickhouse
+0.10, pg_cron 1.6, replicated by `scripts/clickpipe.sh` into ClickHouse Cloud
+26.6.1. That run held 4.6M trips — January plus `backfill-trips.sh --scale 0.1` —
+so the timings above, from 24M rows on 2026-08-15, were not re-measured. What it
+showed:
+
+- The five UI aggregates push down, with the hour, weekend and district filters
+  too. ClickHouse's `query_log` shows each read all 4.62M rows there and returned
+  at most 200. `= ANY(districts)` arrives as `district IN (...)`, and
+  `extract(dow …)` as `toDayOfWeek(…, 2)`.
+- By district, hour of day and over time return identical rows on both sides,
+  with and without the weekday and weekend filters. The two per-station
+  aggregates differed only below the `LIMIT` tie and, in every differing row
+  inspected, by 0.1 in `round(avg(…), 1)`: ClickHouse's `avg` is a Float64 and
+  its `round` sends an exact tie to even (`round(15.25, 1)` = 15.2), while
+  Postgres numeric rounds it away from zero (15.3).
+- In `sql/20-aggregate-pushdown.sql`, queries 1 and 4 push down. Query 2 joins
+  the local stations on purpose and does not. Queries 3 and 5 do not either:
+  their Remote SQL only selects columns.
+- ClickPipes rejects the Managed Postgres certificate unless it is given the
+  service's CA, so `clickpipe.sh` fetches it from the API.
+
+First verified 2026-08-15 on PostgreSQL 18.4, pg_clickhouse 0.3.
 
 ### Quickstart
 
 ```bash
-ln -s ../provisioning/config.env config.env   # or fill in config.env.example
+cp config.env.example config.env    # PG* as in ../provisioning/config.env, plus CH_* and CHC_*
 
 ./scripts/fetch-data.sh                       # ~275 MB, about 45s
 ./scripts/load-stations.sh                    # 2,789 rows into PostGIS
@@ -62,11 +85,22 @@ ln -s ../provisioning/config.env config.env   # or fill in config.env.example
 ./scripts/psql.sh -c "SELECT bike.generator_schedule('1 minute')"
 ```
 
-Then, to let the aggregates move (needs a ClickHouse service with the two tables
-already replicated into it by ClickPipes):
+Then, to let the aggregates move, replicate the two tables into ClickHouse Cloud
+and point pg_clickhouse at the copy. `CH_DATABASE` (default `mpg_hols_bike`) is
+this lab's own database, so it can share a service with other work:
 
 ```bash
-./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
+./scripts/clickpipe.sh create                   # Postgres CDC ClickPipe into CH_DATABASE
+./scripts/clickpipe.sh status                   # until Running and the counts agree
+./scripts/psql.sh -f /sql/40-fdw-clickhouse.sql # foreign tables; CH_* from config.env
+```
+
+And to remove everything the lab made outside Postgres's own tables — the
+generator job, the pipe, its slot and publication, the `ch` schema and
+`CH_DATABASE`:
+
+```bash
+./scripts/teardown.sh
 ```
 
 `psql` runs in a container, so nothing needs installing. The hostname carries
@@ -259,6 +293,8 @@ scripts/catch-up.sh           fill the hours since the newest trip
 scripts/shift-to-utc.sh       one-off KST → UTC for data loaded before 2026-08-15
 scripts/generate-trips.sh     client-side live feed
 scripts/explain-pushdown.sh   did it push down?
+scripts/clickpipe.sh          the CDC ClickPipe over the Cloud API: create, status, delete
+scripts/teardown.sh           remove the pipe, slot, ch schema, CH_DATABASE, generator job
 scripts/psql.sh               psql in a container
 
 ui/app.py                     stdlib + psycopg; walks EXPLAIN JSON for the verdict
@@ -315,7 +351,7 @@ bike.trips      2,400만 행, 계속 증가       ← 집계만 함
    ST_Distance, 방위각                                여기서 실행
 ```
 
-**그리고 실제로 됩니다.** 같은 SQL, 양쪽, 2,400만 행 중 28일 구간:
+**그리고 실제로 됩니다.** 같은 SQL, 양쪽, 2,400만 행 중 28일 구간(2026-08-15, pg_clickhouse 0.3):
 
 | | 플랜 | 옮긴 행 | 시간 |
 |---|---|---|---|
@@ -324,16 +360,37 @@ bike.trips      2,400만 행, 계속 증가       ← 집계만 함
 
 ClickHouse 자신의 `system.query_log`가 독립적으로 확인해 줍니다 — *저쪽에서*
 24.11M 행을 읽고 15행 반환. 집계 다섯 개가 모두 푸시다운되며, KST 필터가 만드는
-`extract(hour FROM started_at + interval '9 hours')`도 포함입니다 —
-`toHour(started_at + 32400)`으로 도착합니다.
+`extract(hour FROM started_at + interval '9 hours')`도 포함입니다.
+pg_clickhouse 0.3은 이를 `toHour(started_at + 32400)`으로 보냈고, 0.10은
+`cast(toHour((started_at + INTERVAL 32400 SECOND)), 'Nullable(Int32)')`로 보냅니다.
 
-**2026-08-15 검증**, `ap-northeast-2`의 실제 ClickHouse Managed Postgres 서비스
-기준: PostgreSQL 18.4, PostGIS 3.6.4, pg_clickhouse 0.3, pg_cron 1.6.
+**2026-10-14 검증**, 새로 만든 ClickHouse Managed Postgres 서비스(`r6gd.medium`,
+`ap-northeast-2`)에서 처음부터 끝까지 실행: PostgreSQL 18.6, PostGIS 3.6.4,
+pg_clickhouse 0.10, pg_cron 1.6, `scripts/clickpipe.sh`로 ClickHouse Cloud 26.6.1에
+복제. 이 실행은 460만 행(1월분 + `backfill-trips.sh --scale 0.1`)이라, 위의
+2026-08-15 2,400만 행 기준 시간은 다시 재지 않았습니다. 확인한 것:
+
+- UI 집계 다섯 개가 시간·주말·구 필터를 걸어도 모두 푸시다운됩니다. ClickHouse
+  `query_log`에서 각 쿼리가 저쪽에서 462만 행을 모두 읽고 최대 200행을 돌려준 것을
+  확인했습니다. `= ANY(districts)`는 `district IN (...)`으로,
+  `extract(dow …)`는 `toDayOfWeek(…, 2)`로 도착합니다.
+- 구별·시간대별·기간별 집계는 평일·주말 필터 유무와 상관없이 양쪽 결과 행이
+  같습니다. 대여소 단위 집계 두 개는 `LIMIT` 경계의 동점 행에서만, 그리고 열어 본
+  차이 행에서는 모두 `round(avg(…), 1)`의 0.1만 달랐습니다. ClickHouse의 `avg`는
+  Float64이고 `round`는 정확히 반인 값을 짝수 쪽으로 보내지만(`round(15.25, 1)` =
+  15.2), Postgres numeric은 0에서 먼 쪽으로 올립니다(15.3).
+- `sql/20-aggregate-pushdown.sql`에서는 쿼리 1과 4가 푸시다운됩니다. 쿼리 2는
+  일부러 로컬 stations와 조인하므로 내려가지 않고, 쿼리 3과 5도 Remote SQL이
+  컬럼만 고르므로 내려가지 않습니다.
+- ClickPipes는 서비스의 CA를 받지 않으면 Managed Postgres 인증서를 거부합니다.
+  그래서 `clickpipe.sh`가 API에서 CA를 가져옵니다.
+
+처음 검증은 2026-08-15, PostgreSQL 18.4, pg_clickhouse 0.3이었습니다.
 
 ### 빠른 시작
 
 ```bash
-ln -s ../provisioning/config.env config.env   # 또는 config.env.example 작성
+cp config.env.example config.env    # PG*는 ../provisioning/config.env와 같게, 여기에 CH_*·CHC_*
 
 ./scripts/fetch-data.sh                       # 약 275 MB, 45초
 ./scripts/load-stations.sh                    # 2,789행 PostGIS 적재
@@ -345,11 +402,21 @@ ln -s ../provisioning/config.env config.env   # 또는 config.env.example 작성
 ./scripts/psql.sh -c "SELECT bike.generator_schedule('1 minute')"
 ```
 
-집계를 옮기려면 (ClickPipes로 두 테이블이 이미 복제된 ClickHouse 서비스가
-필요합니다):
+집계를 옮기려면 두 테이블을 ClickHouse Cloud로 복제하고 pg_clickhouse가 그
+복제본을 읽게 합니다. `CH_DATABASE`(기본 `mpg_hols_bike`)는 이 랩 전용
+데이터베이스라 다른 작업과 서비스를 같이 써도 됩니다.
 
 ```bash
-./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
+./scripts/clickpipe.sh create                   # CH_DATABASE로 가는 Postgres CDC ClickPipe
+./scripts/clickpipe.sh status                   # Running이 되고 건수가 맞을 때까지
+./scripts/psql.sh -f /sql/40-fdw-clickhouse.sql # foreign table, CH_*는 config.env에서
+```
+
+Postgres 테이블 밖에 랩이 만든 것 — generator 작업, 파이프와 그 슬롯·퍼블리케이션,
+`ch` 스키마, `CH_DATABASE` — 을 모두 지우려면:
+
+```bash
+./scripts/teardown.sh
 ```
 
 `psql`은 컨테이너로 실행하므로 설치할 게 없습니다. 호스트명에 서비스 이름과 id가
@@ -537,6 +604,8 @@ scripts/catch-up.sh           최신 대여 이후 시각 단위 공백 채우�
 scripts/shift-to-utc.sh       2026-08-15 이전에 적재한 데이터의 1회 KST → UTC 변환
 scripts/generate-trips.sh     클라이언트 측 실시간 피드
 scripts/explain-pushdown.sh   푸시다운 됐나?
+scripts/clickpipe.sh          Cloud API로 CDC ClickPipe 생성·상태·삭제
+scripts/teardown.sh           파이프·슬롯·ch 스키마·CH_DATABASE·generator 작업 제거
 scripts/psql.sh               컨테이너 psql
 
 ui/app.py                     표준 라이브러리 + psycopg. EXPLAIN JSON을 순회해 판정
