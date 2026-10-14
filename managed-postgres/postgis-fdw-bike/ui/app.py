@@ -491,6 +491,10 @@ ORDER BY trips DESC LIMIT {limit}"""},
         "label": "Heaviest corridors",
         "note": "Origin–destination pairs. Joins two copies of stations to trips; "
                 "all three are remote, so the whole join can move.",
+        # Two copies of stations and neither is called s: the district filter
+        # applies to the origin. With s it named a table that is not in the
+        # query, and any district filter failed on both sides.
+        "stations": "o",
         "sql": """
 SELECT o.district || ' → ' || d.district AS route,
        o.name AS origin, d.name AS destination,
@@ -580,7 +584,7 @@ def build_agg(name, f, schema):
     """Render one aggregate against a schema, with the filters bound in."""
     q = AGG_QUERIES[name]
     params = []
-    where, params = f.where("t", "s", params)
+    where, params = f.where("t", q.get("stations", "s"), params)
     having, params = f.having(params)
     sql = (q["sql"]
            .replace("{S}", schema)

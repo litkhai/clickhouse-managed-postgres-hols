@@ -6,27 +6,46 @@
 -- replication working and having pushdown working are two separate facts, and
 -- the UI reports them separately for that reason.
 --
---   ./scripts/psql.sh -v ch_host=... -v ch_pass=... -f /sql/40-fdw-clickhouse.sql
+--   ./scripts/psql.sh -f /sql/40-fdw-clickhouse.sql
+--
+-- The connection comes from CH_HOST, CH_PORT, CH_USER, CH_PASSWORD and
+-- CH_DATABASE in config.env (see _clickhouse-vars.sql), so the password stays out
+-- of the command line and out of `ps`. CH_DATABASE is the database
+-- scripts/clickpipe.sh makes the ClickPipe destination: the foreign tables below
+-- must read the same one ClickPipes writes, and on a shared service it must not
+-- be somebody else's.
 --
 -- Never commit the host or the password. This repository is public; keep them
 -- in the gitignored config.env like every other credential in this lab.
 
 \set ON_ERROR_STOP on
 
+\ir _clickhouse-vars.sql
+-- \quit inside an included file only ends that file, so check the outcome here.
+\if :{?ch_vars_ok}
+\else
+  \quit
+\endif
+
 -- The wrapper ships with the service — no CREATE EXTENSION needed beyond this.
 CREATE EXTENSION IF NOT EXISTS pg_clickhouse;
 
--- Options this wrapper accepts, from its own validator:
---   host, secure, min_tls_version, port, dbname, compression, driver, fetch_size
--- ClickHouse Cloud refuses plaintext, so secure must be on; 9440 is the native
--- protocol's TLS port (8443 is the HTTP one, driver 'http').
+-- Options this wrapper accepts, from its own validator (pg_clickhouse 0.11, read
+-- from the HINT of a rejected option):
+--   host, secure, min_tls_version, port, dbname, compression, driver, encoding_check
+-- fetch_size is not there: it was deprecated in 0.10 and removed in 0.11, and a
+-- server created with it is now rejected with 'invalid option "fetch_size"'.
+-- ClickHouse Cloud refuses plaintext, so secure must be on (ch_secure defaults to
+-- true; CH_SECURE=false is only for trying this file on a local server without
+-- TLS); 9440 is the native protocol's TLS port (8443 is the HTTP one, driver
+-- 'http').
 DROP SERVER IF EXISTS chsrv CASCADE;
 CREATE SERVER chsrv FOREIGN DATA WRAPPER clickhouse_fdw
-  OPTIONS (host :'ch_host', port '9440', dbname 'pg_sync',
-           secure 'true', driver 'binary');
+  OPTIONS (host :'ch_host', port :'ch_port', dbname :'ch_db',
+           secure :'ch_secure', driver 'binary');
 
 CREATE USER MAPPING FOR CURRENT_USER SERVER chsrv
-  OPTIONS (user 'default', password :'ch_pass');
+  OPTIONS (user :'ch_user', password :'ch_pass');
 
 -- A schema of its own, so the same query text can be pointed at either side by
 -- changing one identifier. That is what makes the side-by-side on the Pushdown

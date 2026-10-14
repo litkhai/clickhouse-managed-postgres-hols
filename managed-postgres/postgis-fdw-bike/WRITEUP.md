@@ -315,11 +315,20 @@ that rewriting the queries into a more pushdown-friendly shape was considered.
 | Hour of day | 7,375 ms | 1,099 ms |
 | Over time | 3,558 ms | 3,830 ms |
 
-The time-zone arithmetic translates cleanly:
+The time-zone arithmetic translates cleanly. pg_clickhouse 0.3, which these
+measurements used, sent:
 
 ```
 extract(hour FROM started_at + interval '9 hours')      →  toHour(started_at + 32400)
 date_trunc('quarter', started_at + interval '9 hours')  →  toStartOfQuarter(started_at + 32400)
+```
+
+From 0.10 the interval travels as a ClickHouse `INTERVAL`, and `extract` gets a
+cast (observed 2026-10-14, still pushed down):
+
+```
+extract(hour FROM …)    →  cast(toHour((started_at + INTERVAL 32400 SECOND)), 'Nullable(Int32)')
+date_trunc('quarter', …) →  toStartOfQuarter((started_at + INTERVAL 32400 SECOND))
 ```
 
 All five bucket sizes push down too, and the read side stays constant while the
@@ -334,7 +343,7 @@ returned side shrinks — the cheap half of a rollup:
 | 1 quarter | 5,082 ms | 1,602 ms | 1 |
 
 **A Postgres plan claiming the work went remote is not evidence.** ClickHouse
-was asked directly:
+was asked directly (2026-08-15, pg_clickhouse 0.3):
 
 ```
 11:44:30  1483 ms  read 24.11 million rows / 551 MiB  →  result_rows 15
@@ -747,11 +756,20 @@ KST 필터는 `extract(hour FROM started_at + interval '9 hours')` 같은 식을
 | 시간대별 | 7,375 ms | 1,099 ms |
 | 기간별 | 3,558 ms | 3,830 ms |
 
-시간대 산술도 깔끔하게 번역됩니다.
+시간대 산술도 깔끔하게 번역됩니다. 이 측정에 쓴 pg_clickhouse 0.3은 이렇게
+보냈습니다.
 
 ```
 extract(hour FROM started_at + interval '9 hours')      →  toHour(started_at + 32400)
 date_trunc('quarter', started_at + interval '9 hours')  →  toStartOfQuarter(started_at + 32400)
+```
+
+0.10부터는 interval이 ClickHouse `INTERVAL`로 가고 `extract`에는 cast가 붙습니다
+(2026-10-14 관찰, 여전히 푸시다운됨).
+
+```
+extract(hour FROM …)    →  cast(toHour((started_at + INTERVAL 32400 SECOND)), 'Nullable(Int32)')
+date_trunc('quarter', …) →  toStartOfQuarter((started_at + INTERVAL 32400 SECOND))
 ```
 
 버킷 다섯 종도 전부 내려가고, 읽는 쪽은 그대로인데 돌아오는 쪽만 줄어듭니다 —
@@ -766,7 +784,7 @@ date_trunc('quarter', started_at + interval '9 hours')  →  toStartOfQuarter(st
 | 1분기 | 5,082 ms | 1,602 ms | 1 |
 
 **Postgres 플랜이 원격이라고 말하는 것은 증거가 아닙니다.** ClickHouse에 직접
-물었습니다.
+물었습니다(2026-08-15, pg_clickhouse 0.3).
 
 ```
 11:44:30  1483 ms  read 24.11 million rows / 551 MiB  →  result_rows 15

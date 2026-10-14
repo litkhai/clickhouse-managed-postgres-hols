@@ -1,6 +1,6 @@
 # STATUS.md
 
-**As of 2026-10-03** — `docs/labs.json` added (notes-site export, 0 labs published). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
+**As of 2026-10-14** — postgis-fdw-bike and provisioning re-run end to end on a new Managed Postgres service (#11, #15). As of 2026-10-03: `docs/labs.json` added (notes-site export). As of 2026-10-02: split out of [litkhai/clickhouse-hols](https://github.com/litkhai/clickhouse-hols/tree/pre-split-2026-10) with history.
 
 ## CI
 
@@ -22,16 +22,16 @@ Images the labs pull, pinned in the repository. Change a row only together with 
 
 Managed Postgres and ClickHouse Cloud versions are whatever the service runs. They are recorded in each lab's verification line, not pinned here.
 
-The last Cloud run was 2026-10-02 in `ap-northeast-2`:
+The last Cloud runs, all in `ap-northeast-2`:
 
-| Product | Versions |
-|---|---|
-| Managed Postgres | PostgreSQL 18.6. Extensions: pgvector 0.8.6; pg_clickhouse 0.10 available, 0.3 installed; pg_stat_ch 0.3 |
-| ClickHouse Cloud | 26.6.1.2191 |
+| Date | Labs | Managed Postgres | ClickHouse Cloud |
+|---|---|---|---|
+| 2026-10-14 | provisioning, postgis-fdw-bike | PostgreSQL 18.6, new `r6gd.medium`. PostGIS 3.6.4, pg_clickhouse 0.10, pg_cron 1.6, pg_stat_ch 0.4 | 26.6.1.2326 |
+| 2026-10-02 | vector-search, provisioning (connect only) | PostgreSQL 18.6. pgvector 0.8.6; pg_clickhouse 0.10 available, 0.3 installed; pg_stat_ch 0.3 | 26.6.1.2191 |
 
 ## Open work
 
 Tracked as issues — [all open](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues) · [needs a re-run](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues?q=is%3Aopen+label%3Are-verify):
 
-- [Re-verify postgis-fdw-bike on pg_clickhouse 0.10+](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)
-- [provisioning: run the create/delete scripts against the live API](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)
+
+None open.

@@ -7,6 +7,10 @@
 #
 # Everything runs in a container, so psql does not have to be installed.
 #
+# The CH_* variables (the ClickHouse side, read by sql/_clickhouse-vars.sql with
+# \getenv) are passed by name only, with no =value, so the ClickHouse password
+# never appears in the docker command line or in `ps`.
+#
 # Output is masked (mask_stream in lib.sh) so the hostname and the resolved
 # address do not end up in a screenshot, which psql prints in its own connection
 # errors. The one exception is an interactive session: a terminal needs -t, and
@@ -21,6 +25,7 @@ cd "$LAB_DIR"
 if [ $# -eq 0 ] && [ -t 0 ]; then
     exec docker run --rm -i -t \
         -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE \
+        -e CH_HOST -e CH_PORT -e CH_USER -e CH_PASSWORD -e CH_DATABASE -e CH_SECURE \
         -v "$LAB_DIR/sql:/sql:ro" \
         -w / \
         "$PSQL_IMAGE" psql -X -v ON_ERROR_STOP=1
@@ -32,6 +37,7 @@ fi
 # psql's, not sed's.
 with_masked_stderr docker run --rm -i \
     -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -e PGSSLMODE \
+    -e CH_HOST -e CH_PORT -e CH_USER -e CH_PASSWORD -e CH_DATABASE -e CH_SECURE \
     -v "$LAB_DIR/sql:/sql:ro" \
     -w / \
     "$PSQL_IMAGE" psql -X -v ON_ERROR_STOP=1 "$@" | mask_stream

@@ -9,31 +9,32 @@
 Creating a Managed Postgres service through the ClickHouse Cloud API, and
 confirming you can reach it.
 
-**Verified 2026-10-02** with `01-connect-test.sh` against a live service in `ap-northeast-2`. It was an existing `r6gd.large`.
+**Verified 2026-10-14** end to end against the live API in `ap-northeast-2`: `00-create-service.sh` made a new `r6gd.medium`, `01-connect-test.sh` connected with the `config.env` it wrote, and `99-delete-service.sh` removed it.
 
 | Check | Result |
 |---|---|
+| Create | `creating` → `running` in 4 min 34 s |
+| Create response | carried the `password`, so `config.env` was complete |
 | Server | **PostgreSQL 18.6** |
 | TLS | TLS 1.3 |
 | `wal_level` | `logical` |
 | `max_connections` | 500 |
-| `pg_clickhouse` | 0.10 available, 0.3 installed |
-| `pg_stat_ch` | 0.3 installed |
+| `pg_clickhouse` | 0.10 available, not installed on a new service |
+| `pg_stat_ch` | 0.4 installed |
+| Delete | `deleting` → HTTP 404 in 17 s |
 
-It was first verified on 2026-08-15, on PostgreSQL 18.4.
+`01-connect-test.sh` was also run on 2026-10-02 against an existing `r6gd.large` (pg_clickhouse 0.3 installed, pg_stat_ch 0.3), and first on 2026-08-15, on PostgreSQL 18.4.
 
 The API shapes below come from the live OpenAPI spec at `https://api.clickhouse.cloud/v1`, read 2026-10-01.
-
-**Creating and deleting a service has not been run against the live API.** `00-create-service.sh` and `99-delete-service.sh` were tested only against a local mock of it, and both verifications used a service that already existed.
 
 ### Files
 
 | File | Role |
 |------|------|
 | `config.env.example` | Template. Copy to `config.env`, which is gitignored |
-| `00-create-service.sh` | Creates a service over the API. It writes `config.env` (mode 600) without printing the password, then waits for `running`. `--dry-run` only prints the request. Tested against a mock only |
+| `00-create-service.sh` | Creates a service over the API. It writes `config.env` (mode 600) without printing the password, then waits for `running`. `--dry-run` only prints the request |
 | `01-connect-test.sh` | Connects, reports the server, and does a write round trip |
-| `99-delete-service.sh` | Deletes the service named by `PG_SERVICE_ID` in `config.env`, waits until it is gone, then renames `config.env`. Tested against a mock only |
+| `99-delete-service.sh` | Deletes the service named by `PG_SERVICE_ID` in `config.env`, waits until it is gone, then renames `config.env` |
 
 ### Creating a service over the API
 
@@ -183,31 +184,32 @@ OK: connected, queried and wrote.
 ClickHouse Cloud API로 Managed Postgres 서비스를 만드는 방법과, 실제로 접속이
 되는지 확인하는 스크립트입니다.
 
-**2026-10-02 검증** — `ap-northeast-2`의 실제 서비스에 `01-connect-test.sh`로 접속해 확인했습니다. 이미 있던 `r6gd.large` 서비스입니다.
+**2026-10-14 검증** — `ap-northeast-2`에서 실제 API로 처음부터 끝까지 실행했습니다. `00-create-service.sh`가 새 `r6gd.medium`을 만들고, `01-connect-test.sh`가 그 스크립트가 쓴 `config.env`로 접속했고, `99-delete-service.sh`가 서비스를 지웠습니다.
 
 | 항목 | 결과 |
 |---|---|
+| 생성 | `creating` → `running` 4분 34초 |
+| 생성 응답 | `password`가 들어 있어 `config.env`가 완전했음 |
 | 서버 | **PostgreSQL 18.6** |
 | TLS | TLS 1.3 |
 | `wal_level` | `logical` |
 | `max_connections` | 500 |
-| `pg_clickhouse` | 0.10 사용 가능, 0.3 설치됨 |
-| `pg_stat_ch` | 0.3 설치됨 |
+| `pg_clickhouse` | 0.10 사용 가능, 새 서비스에는 설치 안 됨 |
+| `pg_stat_ch` | 0.4 설치됨 |
+| 삭제 | `deleting` → HTTP 404 17초 |
 
-처음 검증은 2026-08-15, PostgreSQL 18.4에서였습니다.
+`01-connect-test.sh`는 2026-10-02에 이미 있던 `r6gd.large`(pg_clickhouse 0.3 설치, pg_stat_ch 0.3)에서도 돌렸고, 처음은 2026-08-15, PostgreSQL 18.4에서였습니다.
 
 아래 API 스키마는 `https://api.clickhouse.cloud/v1`의 라이브 OpenAPI 스펙에서 가져왔고, 2026-10-01에 읽었습니다.
-
-**서비스 생성·삭제는 실제 API로 실행하지 않았습니다.** `00-create-service.sh`와 `99-delete-service.sh`는 로컬에 띄운 가짜 API로만 시험했고, 두 번의 검증 모두 이미 있던 서비스를 썼습니다.
 
 ### 파일
 
 | 파일 | 역할 |
 |------|------|
 | `config.env.example` | 템플릿. `config.env`로 복사해서 사용하며 그 파일은 gitignore됩니다 |
-| `00-create-service.sh` | API로 서비스를 만듭니다. 비밀번호를 출력하지 않고 `config.env`(권한 600)에 쓴 뒤 `running`이 될 때까지 기다립니다. `--dry-run`은 요청만 보여 줍니다. 가짜 API로만 시험함 |
+| `00-create-service.sh` | API로 서비스를 만듭니다. 비밀번호를 출력하지 않고 `config.env`(권한 600)에 쓴 뒤 `running`이 될 때까지 기다립니다. `--dry-run`은 요청만 보여 줍니다 |
 | `01-connect-test.sh` | 접속해서 서버 정보를 출력하고 쓰기까지 왕복 확인 |
-| `99-delete-service.sh` | `config.env`의 `PG_SERVICE_ID` 서비스를 삭제하고 사라질 때까지 기다린 뒤 `config.env` 이름을 바꿉니다. 가짜 API로만 시험함 |
+| `99-delete-service.sh` | `config.env`의 `PG_SERVICE_ID` 서비스를 삭제하고 사라질 때까지 기다린 뒤 `config.env` 이름을 바꿉니다 |
 
 ### API로 서비스 생성
 
