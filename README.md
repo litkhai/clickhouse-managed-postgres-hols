@@ -21,7 +21,7 @@ Hands-on labs for ClickHouse Managed Postgres and the `pg_clickhouse` extension:
 
 | Lab | What it covers |
 |-----|----------------|
-| [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | `pg_clickhouse` on local Docker: querying ClickHouse from PostgreSQL |
+| [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | `pg_clickhouse` on local Docker: querying ClickHouse from PostgreSQL, and reverse ETL into Postgres with pg_cron |
 
 ### 🔗 Related repositories
 
@@ -70,7 +70,7 @@ ClickHouse Managed Postgres와 `pg_clickhouse` 확장 실습 모음입니다. �
 
 | 실습 | 내용 |
 |-----|----------------|
-| [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | 로컬 Docker의 `pg_clickhouse`: PostgreSQL에서 ClickHouse 조회 |
+| [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | 로컬 Docker의 `pg_clickhouse`: PostgreSQL에서 ClickHouse 조회, pg_cron으로 Postgres에 리버스 ETL |
 
 ### 🔗 관련 저장소
 
