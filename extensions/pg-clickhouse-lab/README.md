@@ -10,7 +10,7 @@
 
 A self-contained lab that needs only Docker. It demonstrates the official **`pg_clickhouse`** PostgreSQL extension end to end.
 
-PostgreSQL 18 with pg_clickhouse 0.11.0 and ClickHouse 26.9.7.9 run together on a private Docker network. You install the extension, register a foreign server, import schemas, observe pushdown, and send ClickHouse SQL directly with `clickhouse_query()` / `clickhouse_perform()`. Nothing is installed on your host.
+PostgreSQL 18 with pg_clickhouse 0.11.0 and pg_cron 1.6.8, and ClickHouse 26.9.7.9, run together on a private Docker network. You install the extension, register a foreign server, import schemas, observe pushdown, and send ClickHouse SQL directly with `clickhouse_query()` / `clickhouse_perform()`. Steps 05–09 turn the direction around: a pg_cron job in PostgreSQL pulls ClickHouse results into a local serving table (reverse ETL). Nothing is installed on your host.
 
 ### 📋 What is `pg_clickhouse`?
 
@@ -32,6 +32,11 @@ PostgreSQL 18 with pg_clickhouse 0.11.0 and ClickHouse 26.9.7.9 run together on 
 | 02 | `IMPORT FOREIGN SCHEMA` | Auto-create PG foreign tables for every CH table; type-mapping table |
 | 03 | Pushdown demonstration | `EXPLAIN (VERBOSE)` showing JOIN, GROUP BY and window-function pushdown to CH |
 | 04 | `clickhouse_query` / `clickhouse_perform` + dictionaries | Create CH objects from PG, then `dictGet` pushdown |
+| 05 | pg_cron + the reverse-ETL source | Preload pg_cron, a new session per run, `IMPORT FOREIGN SCHEMA` of a `ReplacingMergeTree` table |
+| 06 | `session_settings`, `log_comment`, read-only users | Replacing the defaults drops `final 1`; tag a job; `readonly = 1` vs `readonly = 2` |
+| 07 | Pattern A — full refresh + swap | Rebuild, `ANALYZE`, rename in one transaction every 5 s; a long reader makes the swap fail on `lock_timeout` |
+| 08 | Pattern B — delta upsert | Watermark window, `ON CONFLICT`, tombstones; a failing cycle leaves table and watermark unchanged |
+| 09 | `system.query_log` correlation | One row per pg_cron run next to its ClickHouse statements; `EXPLAIN ANALYZE` has no query id |
 
 ### 🚀 Quick Start
 
@@ -45,6 +50,13 @@ cd extensions/pg-clickhouse-lab
 ./03-pushdown-and-aggregates.sh
 ./04-raw-query-and-dictionary.sh
 
+# Reverse ETL with pg_cron (in order; 07-09 take about a minute together)
+./05-pg-cron.sh
+./06-session-settings-and-tagging.sh
+./07-refresh-full-swap.sh
+./08-refresh-delta-upsert.sh
+./09-query-log-correlation.sh
+
 # Interactive shells
 ./psql.sh                    # psql against pgch-postgres
 ./clickhouse-client.sh       # clickhouse-client against pgch-clickhouse
@@ -54,8 +66,8 @@ cd extensions/pg-clickhouse-lab
 ```
 
 The setup script will:
-1. Pull `ghcr.io/clickhouse/pg_clickhouse:18-0.11.0` and `clickhouse/clickhouse-server:26.9.7.9`. Both are pinned by multi-arch digest in `docker-compose.yml`; see [STATUS.md](../../STATUS.md) for why.
-2. Start them on a private bridge network (`pgch_net`)
+1. Pull `clickhouse/clickhouse-server:26.9.7.9` and build `pgch-postgres-cron` from [postgres/Dockerfile](postgres/Dockerfile): `ghcr.io/clickhouse/pg_clickhouse:18-0.11.0` plus the PGDG package `postgresql-18-cron` 1.6.8. The ClickHouse image and the base image are pinned by multi-arch digest, the package by version; see [STATUS.md](../../STATUS.md) for why. The build needs network access to the PGDG apt repository.
+2. Start them on a private bridge network (`pgch_net`), with `shared_preload_libraries=pg_cron` on the postgres command line
 3. Wait for both to be healthy
 4. Run `CREATE EXTENSION pg_clickhouse` so it's ready to use
 
@@ -66,6 +78,7 @@ The setup script will:
 │ pgch-postgres                     │ ─────────────────────► │ pgch-clickhouse                │
 │   ghcr.io/clickhouse/pg_clickhouse│   binary :9000         │   clickhouse/clickhouse-server │
 │   PG 18.6 + pg_clickhouse 0.11.0  │                        │   ClickHouse 26.9.7.9          │
+│   + pg_cron 1.6.8                 │                        │                                │
 │   exposed on host :5432           │ ◄───────────────────── │   exposed on host :8123/:9000  │
 └───────────────────────────────────┘     query results      └────────────────────────────────┘
 ```
@@ -195,6 +208,86 @@ GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO data_engineer;
 
 The role also needs `USAGE` on the foreign server and a user mapping.
 
+#### 05–09 — Reverse ETL with pg_cron
+
+Steps 05–09 keep a PostgreSQL serving table up to date from ClickHouse. PostgreSQL pulls: a pg_cron job calls a function, the function reads a foreign table, and the result lands in a local table. ClickHouse needs no write access to PostgreSQL, and the transaction that replaces or updates the serving table is a PostgreSQL transaction. Run them in order; 07 and 08 each leave a paused job whose history 09 reads.
+
+#### 05 — pg_cron + the ClickHouse source ([05-pg-cron.sql](05-pg-cron.sql), [05-seed-clickhouse.sql](05-seed-clickhouse.sql))
+
+- **pg_cron needs a server start.** It must be in `shared_preload_libraries`; `docker-compose.yml` sets it on the postgres command line with `cron.database_name=postgres`. pg_clickhouse needs neither: PostgreSQL loads it on first use.
+- **Versions come from the running builds.** `pg_get_loaded_modules()` (PostgreSQL 18) reports pg_clickhouse `0.11.0`. pg_cron 1.6.8 declares no module version, so the runner prints the package version (`postgresql-18-cron 1.6.8-1.pgdg13+2`).
+- **Every run is a new session.** With `cron.use_background_workers = off` (the default), each run has its own `job_pid`. A `SET` in your own session never reaches a job.
+- **The source** is `retl.item_scores`, a `ReplacingMergeTree(updated_at)` table of 10,000 items, plus a tombstone table `retl.item_scores_deleted`. `IMPORT FOREIGN SCHEMA` records `engine 'ReplacingMergeTree'` without the version column. pg_clickhouse 0.11.0 does not turn that option into `FINAL`. Deduplication comes from the session setting `final 1`.
+
+#### 06 — `session_settings`, `log_comment`, read-only users ([06-session-settings-and-tagging.sql](06-session-settings-and-tagging.sql))
+
+One item is written three times into a table whose merges are stopped, so three versions are visible to a plain `SELECT`:
+
+| `pg_clickhouse.session_settings` | rows for the item |
+|---|---|
+| default (`join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0`) | 1 |
+| `'log_comment retl_demo'` | **3** — `final 1` was replaced away, with no error or warning |
+| the four defaults + `log_comment retl_demo` | 1 |
+
+The `Remote SQL` has no `FINAL` keyword in any of the three; `final` travels as a setting. `system.query_log` shows `Settings['final'] = '1'` on the first and third queries and nothing on the second.
+
+Read-only ClickHouse users, through their own servers and user mappings:
+
+| ClickHouse user | Result |
+|---|---|
+| `readonly = 1`, default `session_settings` | `IMPORT FOREIGN SCHEMA` and every query fail: `Cannot modify 'group_by_use_nulls' setting in readonly mode` |
+| `readonly = 1`, `session_settings = ''` | still fails: `Cannot modify 'output_format_native_write_json_as_string' setting in readonly mode`. pg_clickhouse sends settings of its own. |
+| `readonly = 2`, defaults + `log_comment` | works; the tag reaches `system.query_log` |
+| `readonly = 2`, `INSERT` with an `INSERT` grant | refused: `Cannot execute query in readonly mode` |
+
+So a read-only user for pg_clickhouse is `readonly = 2`.
+
+A fresh session sets `pg_clickhouse.session_settings` before anything of pg_clickhouse is loaded (the parameter does not exist yet: `pg_settings` has no row for it). The value still applies: the query returns one row and its tag `retl_set_before_load` is in `system.query_log`. The [reference](https://github.com/ClickHouse/pg_clickhouse/blob/v0.11.0/doc/pg_clickhouse.md#pg_clickhousesession_settings) says to load pg_clickhouse first. `LOAD 'pg_clickhouse'` or `session_preload_libraries` costs nothing and follows it.
+
+#### 07 — Pattern A: full refresh + swap ([07-refresh-full-swap.sql](07-refresh-full-swap.sql))
+
+```sql
+CREATE OR REPLACE FUNCTION serving.refresh_item_scores() RETURNS void LANGUAGE plpgsql AS $fn$
+BEGIN
+    SET LOCAL pg_clickhouse.session_settings =
+        'join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0, log_comment retl_full_refresh';
+    CREATE TABLE serving.item_scores_new (LIKE serving.item_scores INCLUDING ALL);
+    INSERT INTO serving.item_scores_new SELECT item_id, score, labels, updated_at FROM ch.item_scores;
+    ANALYZE serving.item_scores_new;
+    SET LOCAL lock_timeout = '3s';
+    ALTER TABLE serving.item_scores     RENAME TO item_scores_old;
+    ALTER TABLE serving.item_scores_new RENAME TO item_scores;
+    DROP TABLE serving.item_scores_old;
+END $fn$;
+
+SELECT cron.schedule('retl-full-refresh', '5 seconds', $$SELECT serving.refresh_item_scores()$$);
+```
+
+- **Positive check.** ClickHouse gets new versions of 100 items and 5 new items. The next run swaps them in: 10,005 rows, the same as `SELECT count() … FINAL` in ClickHouse.
+- **Negative check.** A reader holds `ACCESS SHARE` on the serving table for 12 s. The job's first rename waits and fails after 3 s with `canceling statement due to lock timeout`; `cron.job_run_details` records it as `failed`. One or two runs fail, depending on where the 12 s fall. A new reader that arrives while the rename waits queues behind it (2.4–2.6 s in the runs) and still sees the previous snapshot. Once the long reader commits, the next run swaps.
+- **Privileges are not copied** by `LIKE … INCLUDING ALL`. `ALTER DEFAULT PRIVILEGES IN SCHEMA serving GRANT SELECT ON TABLES TO app_reader` gives each new table the grant; `has_table_privilege` stays true after every swap.
+- **A view on the live table breaks every cycle.** The view follows the table it was created on, which is renamed to `item_scores_old`, so `DROP TABLE` fails and the cycle rolls back.
+- **Index names** come from the first `CREATE TABLE … LIKE` (`item_scores_new_pkey`) and never collide across cycles.
+
+pg_cron runs one instance of a job at a time; a run that comes due while the previous one is still going is queued ([pg_cron 1.6.8 README](https://github.com/citusdata/pg_cron/blob/v1.6.8/README.md)).
+
+#### 08 — Pattern B: delta upsert ([08-refresh-delta-upsert.sql](08-refresh-delta-upsert.sql))
+
+A watermark row, a window `updated_at > watermark − 1 minute AND updated_at <= now() − 5 s`, `INSERT … ON CONFLICT DO UPDATE … WHERE t.updated_at < excluded.updated_at`, and a `DELETE … USING` the tombstone foreign table. ClickHouse has to provide a version column that only grows per item and a tombstone for each delete.
+
+- **Positive check.** 50 updates, 3 new items and 4 deletes in ClickHouse arrive with the first run whose window covers them: 10,004 rows, equal to ClickHouse's `FINAL` count; the watermark moves.
+- **Negative check.** The tombstone table is renamed away and one item is updated. Runs fail with `Unknown table expression identifier 'retl.item_scores_deleted'`. The upsert in the same cycle rolls back too: the item is not updated and the watermark does not move. After the rename back, the next run catches up, because the window reaches one minute behind the watermark.
+- The `Remote SQL` carries the window as literals: `WHERE ((updated_at > '…')) AND ((updated_at <= '…'))`. Step 09 shows that ClickHouse still read the whole table for each delta. `ORDER BY item_id` does not help a filter on `updated_at`. Only the changed rows travel.
+
+#### 09 — `system.query_log` correlation ([09-query-log-correlation.sql](09-query-log-correlation.sql))
+
+Everything runs from PostgreSQL. `clickhouse_query()` reads `system.query_log` over the same foreign server, and `cron.job_run_details` sits next to it:
+
+- **Per job.** One stable `log_comment` per job makes the runs comparable: count, average duration, rows read, peak memory and exception code by tag.
+- **Per run.** A join on the tag and `query_start_time_microseconds BETWEEN start_time AND end_time` puts each pg_cron run next to its ClickHouse statements. It separates the two kinds of failure. The full-refresh runs that failed on `lock_timeout` have a successful ClickHouse statement: the failure was in PostgreSQL. The failed delta runs have exception code 60 (`UNKNOWN_TABLE`) on the ClickHouse side.
+- **Per statement.** The `Remote SQL` of `EXPLAIN (VERBOSE)` is the text ClickHouse logs in `query`. `EXPLAIN ANALYZE` prints `Relations`, `Remote SQL` and `FDW Time`. Nothing in it names the statement in ClickHouse; `query_id` in `system.query_log` is generated by ClickHouse. When one statement matters, give it a tag of its own and read its `query_id` from `system.query_log`. The upstream request to document this recipe is [ClickHouse/pg_clickhouse#383](https://github.com/ClickHouse/pg_clickhouse/issues/383).
+- `system.query_log` is written every 7.5 s (`flush_interval_milliseconds` 7500 in this image's `config.xml`); `SYSTEM FLUSH LOGS` forces it.
+
 ### 🔌 Pushdown reference (what runs on ClickHouse)
 
 Condensed from the [v0.11.0 reference](https://github.com/ClickHouse/pg_clickhouse/blob/v0.11.0/doc/pg_clickhouse.md#function-and-operator-reference). The exact mappings and conditions are there.
@@ -230,8 +323,9 @@ Condensed from the [v0.11.0 reference](https://github.com/ClickHouse/pg_clickhou
 ```
 pg-clickhouse-lab/
 ├── README.md                          # This document
-├── docker-compose.yml                 # PG 18 + pg_clickhouse 0.11.0 + ClickHouse 26.9.7.9, digest-pinned
-├── 00-setup.sh                        # Pull, start, healthcheck, CREATE EXTENSION
+├── docker-compose.yml                 # PG 18 + pg_clickhouse 0.11.0 + pg_cron 1.6.8, ClickHouse 26.9.7.9
+├── postgres/Dockerfile                # the pinned pg_clickhouse image + postgresql-18-cron 1.6.8
+├── 00-setup.sh                        # Pull, build, start, healthcheck, CREATE EXTENSION
 ├── 01-extension-and-server.sh         # Runner for extension + server + user mapping
 ├── 01-extension-and-server.sql        # SQL
 ├── 02-import-foreign-schema.sh        # Runner (seeds CH, then imports schema)
@@ -241,6 +335,18 @@ pg-clickhouse-lab/
 ├── 03-pushdown-and-aggregates.sql     # JOIN/GROUP BY/window pushdown demos
 ├── 04-raw-query-and-dictionary.sh     # Runner
 ├── 04-raw-query-and-dictionary.sql    # clickhouse_query / clickhouse_perform + DICTIONARY demo
+├── 05-pg-cron.sh                      # Runner (seeds CH, then pg_cron + IMPORT FOREIGN SCHEMA)
+├── 05-seed-clickhouse.sql             # CH side: retl.item_scores, tombstones, read-only users
+├── 05-pg-cron.sql                     # pg_cron, versions, a new session per run
+├── 06-session-settings-and-tagging.sh # Runner (+ a fresh-session check and the query_log view)
+├── 06-session-settings-and-tagging.sql# session_settings defaults, log_comment, readonly 1 vs 2
+├── 07-refresh-full-swap.sh            # Runner: positive check, lock_timeout negative check
+├── 07-refresh-full-swap.sql           # Pattern A function and schedule
+├── 08-refresh-delta-upsert.sh         # Runner: positive check, failing-cycle negative check
+├── 08-refresh-delta-upsert.sql        # Pattern B function and schedule
+├── 09-query-log-correlation.sh        # Runner
+├── 09-query-log-correlation.sql       # cron.job_run_details next to system.query_log
+├── cron-helpers.sh                    # Wait for pg_cron runs (sourced by 07 and 08)
 ├── psql.sh                            # `docker exec -it … psql` wrapper
 ├── clickhouse-client.sh               # `docker exec -it … clickhouse-client` wrapper
 └── cleanup.sh                         # docker compose down -v
@@ -267,8 +373,10 @@ The `04-raw-query-*` file names predate 0.11. They are kept so existing links ke
 
 ### 📝 Notes
 
-- **Verified 2026-10-01** on pg_clickhouse 0.11.0 (PostgreSQL 18.6) with ClickHouse 26.9.7.9. Steps 00–04 ran end to end twice, the second time without cleanup in between. Only arm64 was run; amd64 was not.
-- Re-running any lab script is idempotent — `IF EXISTS` guards and `DROP … CASCADE` keep state consistent. On a second pass, step 02's `IMPORT FOREIGN SCHEMA lab` also picks up `country_lookup` and `country_dict`, which step 04 created in the same ClickHouse database.
+- **Verified 2026-11-05** on pg_clickhouse 0.11.0 (PostgreSQL 18.6) with pg_cron 1.6.8 (`postgresql-18-cron 1.6.8-1.pgdg13+2`) and ClickHouse 26.9.7.9, versions read from the running builds. From a clean stack, steps 00–09 ran end to end; then 05–09 ran again without cleanup. Only arm64 was run; amd64 was not. The host ports were not published during these runs (a compose override with `ports: !reset []`), because other local stacks were using them; every script reaches the containers with `docker exec`.
+- Earlier: **2026-10-01**, steps 00–04 on the pg_clickhouse image without pg_cron, twice, arm64.
+- Re-running any lab script is idempotent — `IF EXISTS` guards and `DROP … CASCADE` keep state consistent. On a second pass, step 02's `IMPORT FOREIGN SCHEMA lab` also picks up `country_lookup` and `country_dict`, which step 04 created in the same ClickHouse database. Step 05 recreates the ClickHouse database `retl`, so 06–09 start from the same data each time.
+- Steps 07 and 08 leave their jobs paused (`cron.alter_job(…, active := false)`). `cleanup.sh` removes the containers and volumes; the locally built `pgch-postgres-cron` image stays until `docker image rm pgch-postgres-cron:18-0.11.0-1.6.8`.
 - The compose stack uses a bridge network (`pgch_net`) instead of `--network host`, so it works on macOS Docker Desktop where host networking is limited
 
 ---
@@ -285,7 +393,7 @@ For questions or issues, see the [repository README](../../README.md).
 
 도커만 있으면 되는 자급자족 랩입니다. 공식 **`pg_clickhouse`** PostgreSQL 익스텐션을 처음부터 끝까지 실습합니다.
 
-pg_clickhouse 0.11.0이 든 PostgreSQL 18과 ClickHouse 26.9.7.9를 비공개 도커 네트워크에 함께 띄웁니다. 익스텐션 설치, foreign server 등록, 스키마 임포트, 푸시다운 관찰, `clickhouse_query()` / `clickhouse_perform()`으로 ClickHouse SQL 직접 실행까지 진행합니다. 호스트에는 아무것도 설치하지 않습니다.
+pg_clickhouse 0.11.0과 pg_cron 1.6.8이 든 PostgreSQL 18, 그리고 ClickHouse 26.9.7.9를 비공개 도커 네트워크에 함께 띄웁니다. 익스텐션 설치, foreign server 등록, 스키마 임포트, 푸시다운 관찰, `clickhouse_query()` / `clickhouse_perform()`으로 ClickHouse SQL 직접 실행까지 진행합니다. 05–09단계는 방향을 뒤집습니다. PostgreSQL의 pg_cron 작업이 ClickHouse 결과를 로컬 조회용 테이블로 당겨 옵니다(리버스 ETL). 호스트에는 아무것도 설치하지 않습니다.
 
 ### 📋 `pg_clickhouse`란?
 
@@ -307,6 +415,11 @@ pg_clickhouse 0.11.0이 든 PostgreSQL 18과 ClickHouse 26.9.7.9를 비공개 �
 | 02 | `IMPORT FOREIGN SCHEMA` | CH 테이블 전체를 PG foreign table로 자동 생성, 타입 매핑표 |
 | 03 | 푸시다운 시연 | `EXPLAIN (VERBOSE)`로 JOIN/GROUP BY/윈도우 함수 푸시다운 확인 |
 | 04 | `clickhouse_query` / `clickhouse_perform` + 딕셔너리 | PG에서 CH 객체를 만든 뒤 `dictGet` 푸시다운 |
+| 05 | pg_cron + 리버스 ETL 원본 | pg_cron 사전 로드, 실행마다 새 세션, `ReplacingMergeTree` 테이블의 `IMPORT FOREIGN SCHEMA` |
+| 06 | `session_settings`, `log_comment`, 읽기 전용 사용자 | 기본값을 바꾸면 `final 1`이 빠짐, 작업 태깅, `readonly = 1`과 `readonly = 2` |
+| 07 | 패턴 A — 전면 갱신 + 교체 | 5초마다 새로 만들고 `ANALYZE` 후 한 트랜잭션에서 rename, 오래 읽는 조회가 있으면 교체가 `lock_timeout`으로 실패 |
+| 08 | 패턴 B — 델타 upsert | 워터마크 구간, `ON CONFLICT`, 텀스톤, 실패한 주기는 테이블과 워터마크를 그대로 둠 |
+| 09 | `system.query_log` 대조 | pg_cron 실행 한 줄마다 그 실행의 ClickHouse 문장, `EXPLAIN ANALYZE`에는 query id가 없음 |
 
 ### 🚀 빠른 시작
 
@@ -320,6 +433,13 @@ cd extensions/pg-clickhouse-lab
 ./03-pushdown-and-aggregates.sh
 ./04-raw-query-and-dictionary.sh
 
+# pg_cron 리버스 ETL (순서대로, 07–09는 합쳐 1분쯤)
+./05-pg-cron.sh
+./06-session-settings-and-tagging.sh
+./07-refresh-full-swap.sh
+./08-refresh-delta-upsert.sh
+./09-query-log-correlation.sh
+
 # 인터랙티브 셸
 ./psql.sh                    # pgch-postgres에 psql 접속
 ./clickhouse-client.sh       # pgch-clickhouse에 clickhouse-client 접속
@@ -329,8 +449,8 @@ cd extensions/pg-clickhouse-lab
 ```
 
 `00-setup.sh`는 다음을 수행합니다:
-1. `ghcr.io/clickhouse/pg_clickhouse:18-0.11.0`과 `clickhouse/clickhouse-server:26.9.7.9` 이미지를 pull합니다. 둘 다 `docker-compose.yml`에서 멀티 아키텍처 digest로 고정돼 있고, 그 이유는 [STATUS.md](../../STATUS.md)에 있습니다.
-2. 비공개 브리지 네트워크 (`pgch_net`)에서 두 컨테이너 기동
+1. `clickhouse/clickhouse-server:26.9.7.9`를 pull하고, [postgres/Dockerfile](postgres/Dockerfile)로 `pgch-postgres-cron`을 빌드합니다. `ghcr.io/clickhouse/pg_clickhouse:18-0.11.0`에 PGDG 패키지 `postgresql-18-cron` 1.6.8을 더한 이미지입니다. ClickHouse 이미지와 베이스 이미지는 멀티 아키텍처 digest로, 패키지는 버전으로 고정돼 있고, 그 이유는 [STATUS.md](../../STATUS.md)에 있습니다. 빌드에는 PGDG apt 저장소에 닿는 네트워크가 필요합니다.
+2. 비공개 브리지 네트워크 (`pgch_net`)에서 두 컨테이너 기동. postgres 명령줄에 `shared_preload_libraries=pg_cron`
 3. 둘 다 healthy 상태가 될 때까지 대기
 4. `CREATE EXTENSION pg_clickhouse` 실행해 사용 준비 완료
 
@@ -341,6 +461,7 @@ cd extensions/pg-clickhouse-lab
 │ pgch-postgres                     │ ─────────────────────► │ pgch-clickhouse                │
 │   ghcr.io/clickhouse/pg_clickhouse│   binary :9000         │   clickhouse/clickhouse-server │
 │   PG 18.6 + pg_clickhouse 0.11.0  │                        │   ClickHouse 26.9.7.9          │
+│   + pg_cron 1.6.8                 │                        │                                │
 │   exposed on host :5432           │ ◄───────────────────── │   exposed on host :8123/:9000  │
 └───────────────────────────────────┘     query results      └────────────────────────────────┘
 ```
@@ -470,6 +591,86 @@ GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO data_engineer;
 
 그 역할에는 foreign server에 대한 `USAGE`와 user mapping도 필요합니다.
 
+#### 05–09 — pg_cron으로 리버스 ETL
+
+05–09단계는 PostgreSQL 조회용 테이블을 ClickHouse 기준으로 계속 갱신합니다. 당기는 쪽은 PostgreSQL입니다. pg_cron 작업이 함수를 부르고, 함수가 foreign table을 읽어 로컬 테이블에 넣습니다. ClickHouse에 PostgreSQL 쓰기 권한이 필요 없고, 조회용 테이블을 바꾸거나 고치는 트랜잭션은 PostgreSQL 트랜잭션입니다. 순서대로 실행하세요. 07과 08은 일시 정지한 작업을 남기고, 09가 그 실행 이력을 읽습니다.
+
+#### 05 — pg_cron + ClickHouse 원본 ([05-pg-cron.sql](05-pg-cron.sql), [05-seed-clickhouse.sql](05-seed-clickhouse.sql))
+
+- **pg_cron은 서버 기동이 필요합니다.** `shared_preload_libraries`에 있어야 해서, `docker-compose.yml`이 postgres 명령줄에 `cron.database_name=postgres`와 함께 넣습니다. pg_clickhouse는 둘 다 필요 없습니다. 처음 쓸 때 PostgreSQL이 읽어 들입니다.
+- **버전은 실행 중인 빌드에서 읽습니다.** `pg_get_loaded_modules()`(PostgreSQL 18)가 pg_clickhouse `0.11.0`을 보여 줍니다. pg_cron 1.6.8은 모듈 버전을 선언하지 않아서, 러너가 패키지 버전(`postgresql-18-cron 1.6.8-1.pgdg13+2`)을 출력합니다.
+- **실행마다 새 세션입니다.** `cron.use_background_workers = off`(기본값)에서는 실행마다 `job_pid`가 다릅니다. 내 세션에서 한 `SET`은 작업에 닿지 않습니다.
+- **원본**은 항목 1만 개의 `ReplacingMergeTree(updated_at)` 테이블 `retl.item_scores`와 텀스톤 테이블 `retl.item_scores_deleted`입니다. `IMPORT FOREIGN SCHEMA`는 버전 컬럼 없이 `engine 'ReplacingMergeTree'`만 기록합니다. pg_clickhouse 0.11.0은 이 옵션을 `FINAL`로 바꾸지 않습니다. 중복 제거는 세션 설정 `final 1`이 합니다.
+
+#### 06 — `session_settings`, `log_comment`, 읽기 전용 사용자 ([06-session-settings-and-tagging.sql](06-session-settings-and-tagging.sql))
+
+머지를 멈춘 테이블에 항목 하나를 세 번 써서, 평범한 `SELECT`에 세 버전이 보이게 합니다:
+
+| `pg_clickhouse.session_settings` | 그 항목의 행 수 |
+|---|---|
+| 기본값 (`join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0`) | 1 |
+| `'log_comment retl_demo'` | **3** — `final 1`이 교체돼 사라졌고, 오류도 경고도 없음 |
+| 기본값 네 개 + `log_comment retl_demo` | 1 |
+
+세 경우 모두 `Remote SQL`에 `FINAL` 키워드는 없습니다. `final`은 설정으로 넘어갑니다. `system.query_log`에서 첫째와 셋째 쿼리는 `Settings['final'] = '1'`, 둘째는 값이 없습니다.
+
+읽기 전용 ClickHouse 사용자(각자 서버와 user mapping을 따로 둠):
+
+| ClickHouse 사용자 | 결과 |
+|---|---|
+| `readonly = 1`, `session_settings` 기본값 | `IMPORT FOREIGN SCHEMA`와 모든 쿼리 실패: `Cannot modify 'group_by_use_nulls' setting in readonly mode` |
+| `readonly = 1`, `session_settings = ''` | 그래도 실패: `Cannot modify 'output_format_native_write_json_as_string' setting in readonly mode`. pg_clickhouse가 자기 설정을 따로 보냅니다. |
+| `readonly = 2`, 기본값 + `log_comment` | 동작. 태그가 `system.query_log`에 남음 |
+| `readonly = 2`, `INSERT` 권한을 준 상태에서 `INSERT` | 거부: `Cannot execute query in readonly mode` |
+
+그래서 pg_clickhouse용 읽기 전용 사용자는 `readonly = 2`입니다.
+
+새 세션에서 pg_clickhouse를 아직 아무것도 읽지 않은 상태로(파라미터가 아직 없어 `pg_settings`에 행이 없음) `pg_clickhouse.session_settings`를 먼저 `SET`합니다. 그래도 값이 적용됩니다. 쿼리는 1행을 돌려주고 태그 `retl_set_before_load`가 `system.query_log`에 있습니다. [레퍼런스](https://github.com/ClickHouse/pg_clickhouse/blob/v0.11.0/doc/pg_clickhouse.md#pg_clickhousesession_settings)는 pg_clickhouse를 먼저 로드하라고 합니다. `LOAD 'pg_clickhouse'`나 `session_preload_libraries`는 비용이 없으니 레퍼런스를 따르세요.
+
+#### 07 — 패턴 A: 전면 갱신 + 교체 ([07-refresh-full-swap.sql](07-refresh-full-swap.sql))
+
+```sql
+CREATE OR REPLACE FUNCTION serving.refresh_item_scores() RETURNS void LANGUAGE plpgsql AS $fn$
+BEGIN
+    SET LOCAL pg_clickhouse.session_settings =
+        'join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0, log_comment retl_full_refresh';
+    CREATE TABLE serving.item_scores_new (LIKE serving.item_scores INCLUDING ALL);
+    INSERT INTO serving.item_scores_new SELECT item_id, score, labels, updated_at FROM ch.item_scores;
+    ANALYZE serving.item_scores_new;
+    SET LOCAL lock_timeout = '3s';
+    ALTER TABLE serving.item_scores     RENAME TO item_scores_old;
+    ALTER TABLE serving.item_scores_new RENAME TO item_scores;
+    DROP TABLE serving.item_scores_old;
+END $fn$;
+
+SELECT cron.schedule('retl-full-refresh', '5 seconds', $$SELECT serving.refresh_item_scores()$$);
+```
+
+- **성공 확인.** ClickHouse에 항목 100개의 새 버전과 새 항목 5개를 넣습니다. 다음 실행이 교체해 넣습니다. 10,005행으로, ClickHouse의 `SELECT count() … FINAL`과 같습니다.
+- **실패 확인.** 한 조회가 조회용 테이블에 `ACCESS SHARE`를 12초 잡고 있습니다. 작업의 첫 rename이 기다리다 3초 뒤 `canceling statement due to lock timeout`으로 실패하고, `cron.job_run_details`에 `failed`로 남습니다. 12초가 어디에 걸리느냐에 따라 한두 번 실패합니다. rename이 기다리는 동안 들어온 새 조회는 그 뒤에 줄을 서고(실행에서 2.4–2.6초), 그래도 이전 스냅샷을 봅니다. 오래 읽던 조회가 커밋하면 다음 실행이 교체합니다.
+- **권한은 복사되지 않습니다.** `LIKE … INCLUDING ALL`은 권한을 가져오지 않습니다. `ALTER DEFAULT PRIVILEGES IN SCHEMA serving GRANT SELECT ON TABLES TO app_reader`가 새 테이블마다 권한을 줘서, 교체 뒤에도 `has_table_privilege`가 참입니다.
+- **조회용 테이블 위의 뷰는 매 주기를 깨뜨립니다.** 뷰는 만들 때의 테이블을 따라가는데, 그 테이블이 `item_scores_old`로 바뀌므로 `DROP TABLE`이 실패하고 주기 전체가 롤백됩니다.
+- **인덱스 이름**은 처음 `CREATE TABLE … LIKE`에서 정해지고(`item_scores_new_pkey`), 주기가 돌아도 충돌하지 않습니다.
+
+pg_cron은 한 작업을 한 번에 하나만 실행합니다. 앞 실행이 끝나기 전에 다음 차례가 오면 줄을 세웠다가 실행합니다([pg_cron 1.6.8 README](https://github.com/citusdata/pg_cron/blob/v1.6.8/README.md)).
+
+#### 08 — 패턴 B: 델타 upsert ([08-refresh-delta-upsert.sql](08-refresh-delta-upsert.sql))
+
+워터마크 행 하나, 구간 `updated_at > 워터마크 − 1분 AND updated_at <= now() − 5초`, `INSERT … ON CONFLICT DO UPDATE … WHERE t.updated_at < excluded.updated_at`, 텀스톤 foreign table을 쓰는 `DELETE … USING`으로 이뤄집니다. ClickHouse 쪽에는 항목마다 커지기만 하는 버전 컬럼과, 삭제마다 텀스톤이 있어야 합니다.
+
+- **성공 확인.** ClickHouse의 갱신 50건, 새 항목 3개, 삭제 4건이 그 구간을 덮는 첫 실행에서 들어옵니다. 10,004행으로 ClickHouse의 `FINAL` 건수와 같고, 워터마크가 움직입니다.
+- **실패 확인.** 텀스톤 테이블 이름을 바꿔 치우고 항목 하나를 갱신합니다. 실행이 `Unknown table expression identifier 'retl.item_scores_deleted'`로 실패합니다. 같은 주기의 upsert도 함께 롤백돼, 그 항목은 갱신되지 않고 워터마크도 그대로입니다. 이름을 되돌리면 구간이 워터마크보다 1분 앞에서 시작하므로 다음 실행이 따라잡습니다.
+- `Remote SQL`은 구간을 리터럴로 싣습니다: `WHERE ((updated_at > '…')) AND ((updated_at <= '…'))`. 09단계에서 보듯 ClickHouse는 델타마다 테이블 전체를 읽었습니다. `ORDER BY item_id`는 `updated_at` 필터를 돕지 못합니다. 옮겨지는 것은 바뀐 행뿐입니다.
+
+#### 09 — `system.query_log` 대조 ([09-query-log-correlation.sql](09-query-log-correlation.sql))
+
+모두 PostgreSQL에서 합니다. `clickhouse_query()`가 같은 foreign server로 `system.query_log`를 읽고, `cron.job_run_details`와 나란히 놓습니다:
+
+- **작업 단위.** 작업마다 고정된 `log_comment` 하나면 실행끼리 비교할 수 있습니다. 태그별 문장 수, 평균 시간, 읽은 행, 최대 메모리, 예외 코드.
+- **실행 단위.** 태그와 `query_start_time_microseconds BETWEEN start_time AND end_time`으로 조인하면, pg_cron 실행 한 줄마다 그 실행의 ClickHouse 문장이 붙습니다. 두 종류의 실패가 갈립니다. `lock_timeout`으로 실패한 전면 갱신 실행의 ClickHouse 문장은 성공했습니다. 실패는 PostgreSQL 쪽입니다. 실패한 델타 실행에는 ClickHouse 쪽 예외 코드 60(`UNKNOWN_TABLE`)이 있습니다.
+- **문장 단위.** `EXPLAIN (VERBOSE)`의 `Remote SQL`이 ClickHouse가 `query`에 남기는 문장입니다. `EXPLAIN ANALYZE`는 `Relations`, `Remote SQL`, `FDW Time`을 보여 줄 뿐, ClickHouse에서 그 문장을 가리키는 값은 없습니다. `system.query_log`의 `query_id`는 ClickHouse가 만든 것입니다. 문장 하나가 중요하면 그 문장에만 태그를 따로 붙이고 `system.query_log`에서 `query_id`를 읽습니다. 이 방법을 문서에 넣자는 upstream 요청은 [ClickHouse/pg_clickhouse#383](https://github.com/ClickHouse/pg_clickhouse/issues/383)입니다.
+- `system.query_log`는 7.5초마다 기록됩니다(이 이미지 `config.xml`의 `flush_interval_milliseconds` 7500). `SYSTEM FLUSH LOGS`로 바로 쓰게 할 수 있습니다.
+
 ### 🔌 푸시다운 레퍼런스 (ClickHouse에서 실행되는 항목)
 
 [v0.11.0 레퍼런스](https://github.com/ClickHouse/pg_clickhouse/blob/v0.11.0/doc/pg_clickhouse.md#function-and-operator-reference)를 줄인 것입니다. 정확한 매핑과 조건은 원문에 있습니다.
@@ -505,8 +706,9 @@ GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO data_engineer;
 ```
 pg-clickhouse-lab/
 ├── README.md                          # 이 문서
-├── docker-compose.yml                 # PG 18 + pg_clickhouse 0.11.0 + ClickHouse 26.9.7.9, digest 고정
-├── 00-setup.sh                        # 이미지 pull, 기동, 헬스체크, CREATE EXTENSION
+├── docker-compose.yml                 # PG 18 + pg_clickhouse 0.11.0 + pg_cron 1.6.8, ClickHouse 26.9.7.9
+├── postgres/Dockerfile                # 고정한 pg_clickhouse 이미지 + postgresql-18-cron 1.6.8
+├── 00-setup.sh                        # 이미지 pull·빌드, 기동, 헬스체크, CREATE EXTENSION
 ├── 01-extension-and-server.sh         # 익스텐션 + 서버 + 매핑 러너
 ├── 01-extension-and-server.sql        # SQL
 ├── 02-import-foreign-schema.sh        # 러너 (CH 시드 후 IMPORT)
@@ -516,6 +718,18 @@ pg-clickhouse-lab/
 ├── 03-pushdown-and-aggregates.sql     # JOIN/GROUP BY/윈도우 푸시다운 시연
 ├── 04-raw-query-and-dictionary.sh     # 러너
 ├── 04-raw-query-and-dictionary.sql    # clickhouse_query / clickhouse_perform + DICTIONARY 시연
+├── 05-pg-cron.sh                      # 러너 (CH 시드 후 pg_cron + IMPORT FOREIGN SCHEMA)
+├── 05-seed-clickhouse.sql             # CH 쪽: retl.item_scores, 텀스톤, 읽기 전용 사용자
+├── 05-pg-cron.sql                     # pg_cron, 버전, 실행마다 새 세션
+├── 06-session-settings-and-tagging.sh # 러너 (+ 새 세션 확인과 query_log 조회)
+├── 06-session-settings-and-tagging.sql# session_settings 기본값, log_comment, readonly 1과 2
+├── 07-refresh-full-swap.sh            # 러너: 성공 확인, lock_timeout 실패 확인
+├── 07-refresh-full-swap.sql           # 패턴 A 함수와 스케줄
+├── 08-refresh-delta-upsert.sh         # 러너: 성공 확인, 실패하는 주기 확인
+├── 08-refresh-delta-upsert.sql        # 패턴 B 함수와 스케줄
+├── 09-query-log-correlation.sh        # 러너
+├── 09-query-log-correlation.sql       # cron.job_run_details와 system.query_log 나란히
+├── cron-helpers.sh                    # pg_cron 실행 대기 (07, 08이 source)
 ├── psql.sh                            # `docker exec -it … psql` 래퍼
 ├── clickhouse-client.sh               # `docker exec -it … clickhouse-client` 래퍼
 └── cleanup.sh                         # docker compose down -v
@@ -542,8 +756,10 @@ pg-clickhouse-lab/
 
 ### 📝 참고사항
 
-- **2026-10-01 검증** — pg_clickhouse 0.11.0 (PostgreSQL 18.6) + ClickHouse 26.9.7.9. 00–04단계를 두 번 end-to-end로 실행했고, 두 번째는 중간 정리 없이 돌렸습니다. arm64에서만 실행했고 amd64는 실행하지 않았습니다.
-- 모든 랩 스크립트는 멱등성 보장 — `IF EXISTS`와 `DROP … CASCADE`로 상태 일관성 유지. 두 번째 실행에서는 02단계의 `IMPORT FOREIGN SCHEMA lab`이 04단계가 같은 ClickHouse 데이터베이스에 만든 `country_lookup`과 `country_dict`도 함께 가져옵니다.
+- **2026-11-05 검증** — pg_clickhouse 0.11.0 (PostgreSQL 18.6) + pg_cron 1.6.8 (`postgresql-18-cron 1.6.8-1.pgdg13+2`) + ClickHouse 26.9.7.9. 버전은 실행 중인 빌드에서 읽었습니다. 깨끗한 스택에서 00–09단계를 end-to-end로 실행하고, 정리 없이 05–09단계를 한 번 더 돌렸습니다. arm64에서만 실행했고 amd64는 실행하지 않았습니다. 다른 로컬 스택이 호스트 포트를 쓰고 있어서 이번 실행에서는 포트를 열지 않았습니다(`ports: !reset []` compose override). 모든 스크립트는 `docker exec`로 컨테이너에 접속합니다.
+- 이전: **2026-10-01**, pg_cron 없는 pg_clickhouse 이미지에서 00–04단계를 두 번, arm64.
+- 모든 랩 스크립트는 멱등성 보장 — `IF EXISTS`와 `DROP … CASCADE`로 상태 일관성 유지. 두 번째 실행에서는 02단계의 `IMPORT FOREIGN SCHEMA lab`이 04단계가 같은 ClickHouse 데이터베이스에 만든 `country_lookup`과 `country_dict`도 함께 가져옵니다. 05단계가 ClickHouse 데이터베이스 `retl`을 새로 만들어서, 06–09단계는 매번 같은 데이터에서 시작합니다.
+- 07과 08단계는 작업을 일시 정지(`cron.alter_job(…, active := false)`)한 채로 남깁니다. `cleanup.sh`는 컨테이너와 볼륨을 지우고, 로컬에서 빌드한 `pgch-postgres-cron` 이미지는 `docker image rm pgch-postgres-cron:18-0.11.0-1.6.8`로 지웁니다.
 - 컴포즈 스택은 `--network host` 대신 브리지 네트워크 (`pgch_net`)를 사용해 macOS Docker Desktop에서도 동작
 
 ---

@@ -1,13 +1,13 @@
 {
   "repo": "clickhouse-managed-postgres-hols",
-  "generated": "2026-10-08T13:07:39Z",
+  "generated": "2026-11-05T06:36:30Z",
   "labs": [
     {
       "path": "extensions/pg-clickhouse-lab",
       "title_ko": "pg_clickhouse: PostgreSQL에서 ClickHouse 조회하기",
-      "summary_ko": "Docker만으로 PostgreSQL과 ClickHouse를 띄워 pg_clickhouse 확장을 설치하고, 외부 스키마 가져오기, JOIN·집계 푸시다운, clickhouse_query와 딕셔너리 사용을 차례로 실습합니다.",
+      "summary_ko": "Docker만으로 PostgreSQL과 ClickHouse를 띄워 pg_clickhouse 확장을 설치하고, 외부 스키마 가져오기, JOIN·집계 푸시다운, clickhouse_query와 딕셔너리, pg_cron으로 ClickHouse 결과를 Postgres 테이블에 주기 반영하는 리버스 ETL까지 실습합니다.",
       "title_en": "pg_clickhouse: querying ClickHouse from PostgreSQL",
-      "summary_en": "With only Docker, run PostgreSQL and ClickHouse side by side, install the pg_clickhouse extension, import foreign schemas, watch JOIN and aggregate pushdown, and send ClickHouse SQL with clickhouse_query.",
+      "summary_en": "With only Docker, run PostgreSQL and ClickHouse side by side, install the pg_clickhouse extension, import foreign schemas, watch JOIN and aggregate pushdown, send ClickHouse SQL with clickhouse_query, and keep a Postgres table refreshed from ClickHouse with pg_cron.",
       "category": "feature",
       "tags": [
         "postgres"

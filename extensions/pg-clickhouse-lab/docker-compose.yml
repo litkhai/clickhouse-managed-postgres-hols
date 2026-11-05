@@ -26,9 +26,14 @@ services:
       - pgch_net
 
   postgres:
-    # pg_clickhouse 0.11.0 on PostgreSQL 18, pinned to the multi-arch index digest (docker buildx imagetools inspect, 2026-10-01)
-    image: ghcr.io/clickhouse/pg_clickhouse:18-0.11.0@sha256:ce7a2b4bc7ee899fc1b87c82c87435acc8ede0903b138c66a580ccd197f88b29
+    # pg_clickhouse 0.11.0 on PostgreSQL 18 plus pg_cron 1.6.8 (steps 05-09).
+    # Built locally from postgres/Dockerfile, which pins the base image by digest and the pg_cron package by version.
+    build:
+      context: ./postgres
+    image: pgch-postgres-cron:18-0.11.0-1.6.8
     container_name: pgch-postgres
+    # pg_cron must be in shared_preload_libraries (a restart, not a reconnect); its metadata lives in database "postgres".
+    command: ["postgres", "-c", "shared_preload_libraries=pg_cron", "-c", "cron.database_name=postgres"]
     hostname: postgres
     depends_on:
       clickhouse:
