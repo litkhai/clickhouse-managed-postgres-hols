@@ -8,8 +8,9 @@
 
 > **Status: in progress.** Three labs are written and were verified against a
 > live service:
-> - [`provisioning/`](provisioning/) and [`vector-search/`](vector-search/) on 2026-10-02. Creating and deleting a service through the provisioning scripts is still unverified ([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
-> - [`postgis-fdw-bike/`](postgis-fdw-bike/) on 2026-08-15, against pg_clickhouse 0.3. A re-run is pending ([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)).
+> - [`provisioning/`](provisioning/) on 2026-10-14, end to end against the live API: create, connect and delete ([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
+> - [`postgis-fdw-bike/`](postgis-fdw-bike/) on 2026-10-14, re-run on pg_clickhouse 0.10 ([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)); first verified 2026-08-15 on 0.3.
+> - [`vector-search/`](vector-search/) on 2026-10-02.
 >
 > The remaining areas below are drafted from the product documentation and not
 > written yet.
@@ -20,7 +21,8 @@ using NVMe storage collocated with compute rather than network-attached
 volumes, with integration back into ClickHouse for analytics.
 
 It is a distinct product rather than a ClickHouse Cloud integration, which is
-why it sits at the top level next to `chc/` instead of inside it.
+why it has its own repository and its own top-level directory instead of living
+under the ClickHouse Cloud labs.
 
 ### 📋 Scope
 
@@ -53,10 +55,10 @@ performance claims, read replicas, backups) has to say so in its own README.
 
 ### 🧱 Conventions
 
-Follows the repository layout in the [root README](../README.md):
-`00-setup.sh` to bring the environment up, then numbered `NN-<topic>.sh` runners
-over matching `.sql` files, and a bilingual guide per lab. Every claim gets
-verified against a running instance before it is written down.
+A bilingual guide per lab, with scripts and SQL beside it (see each lab's
+README for its own layout and run order; the numbered `NN-<topic>.sh` runners over
+matching `.sql` files are in [`extensions/pg-clickhouse-lab/`](../extensions/pg-clickhouse-lab/)).
+Every claim gets verified against a running instance before it is written down.
 
 ### 📄 License
 
@@ -67,8 +69,9 @@ verified against a running instance before it is written down.
 ## 한국어
 
 > **상태: 진행 중.** 랩 세 개를 작성했고 실제 서비스로 검증했습니다:
-> - [`provisioning/`](provisioning/)과 [`vector-search/`](vector-search/)는 2026-10-02. provisioning 스크립트로 서비스를 만들고 지우는 부분은 아직 검증하지 않았습니다([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
-> - [`postgis-fdw-bike/`](postgis-fdw-bike/)는 2026-08-15, pg_clickhouse 0.3 기준. 재실행이 남아 있습니다([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)).
+> - [`provisioning/`](provisioning/)은 2026-10-14, 실제 API로 끝까지: 생성, 접속, 삭제([#15](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/15)).
+> - [`postgis-fdw-bike/`](postgis-fdw-bike/)는 2026-10-14, pg_clickhouse 0.10으로 재실행([#11](https://github.com/litkhai/clickhouse-managed-postgres-hols/issues/11)). 처음 검증은 2026-08-15, 0.3.
+> - [`vector-search/`](vector-search/)는 2026-10-02.
 >
 > 아래 나머지 영역은 제품 문서를 보고 잡은 초안이며 아직 작성하지 않았습니다.
 
@@ -77,8 +80,8 @@ verified against a running instance before it is written down.
 네트워크 연결 볼륨 대신 컴퓨트와 물리적으로 같이 놓인 NVMe 스토리지를 쓰고,
 분석을 위해 ClickHouse와 연동됩니다.
 
-ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, `chc/` 안이 아니라 그
-옆 최상위에 두었습니다.
+ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, ClickHouse Cloud 실습 안이
+아니라 별도 저장소와 최상위 디렉터리에 두었습니다.
 
 ### 📋 범위
 
@@ -110,9 +113,10 @@ ClickHouse Cloud의 연동 기능이 아니라 별개 제품이라, `chc/` 안�
 
 ### 🧱 규약
 
-[루트 README](../README.md)의 구성을 따릅니다. `00-setup.sh`로 환경을 띄우고,
-번호가 붙은 `NN-<주제>.sh` 러너가 같은 이름의 `.sql`을 실행하며, 랩마다 영/한
-가이드를 둡니다. 모든 서술은 실제로 띄운 인스턴스에서 확인한 뒤에 적습니다.
+랩마다 영/한 가이드를 두고 스크립트와 SQL을 옆에 둡니다(구성과 실행 순서는 각 랩
+README 참고. 번호가 붙은 `NN-<주제>.sh` 러너가 같은 이름의 `.sql`을 실행하는
+방식은 [`extensions/pg-clickhouse-lab/`](../extensions/pg-clickhouse-lab/)에 있습니다).
+모든 서술은 실제로 띄운 인스턴스에서 확인한 뒤에 적습니다.
 
 ### 📄 라이선스
 
