@@ -22,6 +22,7 @@ Hands-on labs for ClickHouse Managed Postgres and the `pg_clickhouse` extension:
 | Lab | What it covers |
 |-----|----------------|
 | [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | `pg_clickhouse` on local Docker: querying ClickHouse from PostgreSQL, and reverse ETL into Postgres with pg_cron |
+| [extensions/pg-clickhouse-pgvector](extensions/pg-clickhouse-pgvector/) | pgvector nearest-neighbour search through `pg_clickhouse` 0.11.1: what pushes down, when ClickHouse's HNSW index is used, recall and latency on 254,664 real embeddings |
 
 ### 🔗 Related repositories
 
@@ -71,6 +72,7 @@ ClickHouse Managed Postgres와 `pg_clickhouse` 확장 실습 모음입니다. �
 | 실습 | 내용 |
 |-----|----------------|
 | [extensions/pg-clickhouse-lab](extensions/pg-clickhouse-lab/) | 로컬 Docker의 `pg_clickhouse`: PostgreSQL에서 ClickHouse 조회, pg_cron으로 Postgres에 리버스 ETL |
+| [extensions/pg-clickhouse-pgvector](extensions/pg-clickhouse-pgvector/) | `pg_clickhouse` 0.11.1을 거친 pgvector 근접 이웃 검색: 무엇이 푸시다운되고 언제 ClickHouse HNSW 인덱스를 쓰는지, 실제 임베딩 254,664건의 recall과 지연 시간 |
 
 ### 🔗 관련 저장소
 
