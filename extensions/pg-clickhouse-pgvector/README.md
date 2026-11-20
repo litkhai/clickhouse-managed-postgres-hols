@@ -6,6 +6,8 @@
 
 ## English
 
+> **Related notes**: [Pushing pgvector search down to ClickHouse with pg_clickhouse](https://clickhouse.litkhai.dev/en/articles/feature/pg-clickhouse-pgvector-pushdown/) (also in [한국어](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-pgvector-pushdown/), [日本語](https://clickhouse.litkhai.dev/ja/articles/feature/pg-clickhouse-pgvector-pushdown/), [中文](https://clickhouse.litkhai.dev/zh/articles/feature/pg-clickhouse-pgvector-pushdown/))
+
 From version 0.11.1 (2026-11-09), `pg_clickhouse` maps a pgvector `vector` column onto a ClickHouse
 `Array(Float32)` column and pushes the pgvector distance operators down. A Postgres application can then
 run `ORDER BY emb <=> $1 LIMIT 10` against a foreign table, and ClickHouse answers it from its own HNSW
@@ -224,6 +226,8 @@ pg-clickhouse-pgvector/
 ---
 
 ## 한국어
+
+> **관련 글**: [pg_clickhouse로 pgvector 검색을 ClickHouse에 넘기기](https://clickhouse.litkhai.dev/articles/feature/pg-clickhouse-pgvector-pushdown/)
 
 `pg_clickhouse` 0.11.1(2026-11-09)부터 pgvector의 `vector` 컬럼을 ClickHouse의 `Array(Float32)` 컬럼에
 대응시키고, pgvector 거리 연산자를 ClickHouse로 푸시다운합니다. 그래서 Postgres 애플리케이션이 외부 테이블에
